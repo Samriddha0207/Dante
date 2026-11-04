@@ -1,0 +1,38 @@
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: #f7f8fc; color: #1c2130; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+button, input { font: inherit; }
+.dante-frame-shell { padding: 0 24px 24px; }
+.dante-frame { width: 100%; min-height: 82vh; border: 1px solid #e7e9ef; border-radius: 18px; background: white; }
+.dante-topbar { display:flex; align-items:center; justify-content:space-between; max-width:1440px; margin:0 auto; padding:22px 28px 12px; }
+.dante-topbrand { display:flex; align-items:center; gap:12px; font-weight:750; font-size:20px; letter-spacing:-.04em; }
+.dante-mark { display:grid; place-items:center; width:38px; height:38px; border-radius:12px; color:#fff; background:#273b32; }
+.dante-topbrand small { display:block; color:#737986; font-size:11px; font-weight:650; letter-spacing:.08em; text-transform:uppercase; }
+.dante-user-actions { display:flex; align-items:center; gap:12px; color:#737986; font-size:13px; }
+.dante-button { border:0; border-radius:10px; padding:10px 14px; background:#233b32; color:white; cursor:pointer; font-weight:650; }
+.dante-button.secondary { background:#edf0ee; color:#26362f; }
+.dante-analytics { max-width:1384px; margin:0 auto 22px; padding:0 28px; }
+.dante-analytics-head { display:flex; justify-content:space-between; align-items:end; margin:8px 0 16px; }
+.dante-analytics-head h1 { margin:0; font-size:25px; letter-spacing:-.04em; }
+.dante-analytics-head p { margin:5px 0 0; color:#767d88; font-size:13px; }
+.dante-chart-grid { display:grid; grid-template-columns:1.55fr 1fr 1fr; gap:14px; }
+.dante-chart-card { min-width:0; background:white; border:1px solid #e8e9ef; border-radius:15px; padding:16px 17px 10px; box-shadow:0 4px 14px #17203308; }
+.dante-chart-card h2 { margin:0; font-size:13px; letter-spacing:-.01em; }
+.dante-chart-card p { margin:5px 0 8px; color:#858b96; font-size:11px; }
+.dante-chart { width:100%; height:205px; }
+.dante-range { display:flex; gap:4px; padding:3px; border:1px solid #e8e9ef; border-radius:9px; background:#fff; }
+.dante-range button { border:0; border-radius:6px; padding:6px 9px; background:transparent; color:#606674; font-size:11px; cursor:pointer; }
+.dante-range button[aria-pressed="true"] { background:#eaf1eb; color:#274d38; font-weight:700; }
+.dante-auth-wrap { display:grid; place-items:center; min-height:100vh; padding:24px; background:radial-gradient(ellipse at 85% 10%,#e7f0e7 0,transparent 34%),#f7f8fc; }
+.dante-auth-card { width:min(100%,430px); padding:32px; border:1px solid #e8e9ef; border-radius:20px; background:white; box-shadow:0 18px 54px #1720330d; }
+.dante-auth-card h1 { margin:18px 0 5px; font-size:27px; letter-spacing:-.04em; }
+.dante-auth-card p { margin:0 0 20px; color:#777d88; font-size:13px; line-height:1.5; }
+.dante-auth-card label { display:block; margin:13px 0 6px; color:#515865; font-size:12px; font-weight:650; }
+.dante-auth-card input { width:100%; border:1px solid #dfe2e8; border-radius:9px; padding:11px 12px; outline-color:#789f84; }
+.dante-auth-card .dante-button { width:100%; margin-top:17px; }
+.dante-auth-toggle { border:0; padding:0; background:none; color:#355f46; cursor:pointer; font-size:13px; font-weight:650; }
+.dante-message { margin-top:12px; color:#7a3333; font-size:12px; line-height:1.5; }
+.dante-message.ok { color:#2f6444; }
+.dante-loading { padding:80px 20px; text-align:center; color:#767d88; }
+@media (max-width:1000px) { .dante-chart-grid { grid-template-columns:1fr 1fr; } .dante-chart-card:first-child { grid-column:span 2; } }
+@media (max-width:650px) { .dante-topbar { padding:17px 17px 10px; } .dante-analytics { padding:0 17px; } .dante-frame-shell { padding:0 12px 12px; } .dante-chart-grid { grid-template-columns:1fr; } .dante-chart-card:first-child { grid-column:auto; } .dante-user-email { display:none; } .dante-analytics-head { align-items:start; gap:10px; flex-direction:column; } }
