@@ -10,8 +10,8 @@ async function dispatch(request) {
     return Response.json({
       geminiConfigured: Boolean(process.env.GEMINI_API_KEY),
       geminiModel: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
-      supabaseConnected: true,
-      persistence: 'supabase-postgres'
+      supabaseConnected: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY),
+      persistence: process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ? 'supabase-postgres' : 'unconfigured'
     }, { headers: { 'Cache-Control': 'no-store' } });
   }
 

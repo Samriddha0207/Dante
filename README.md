@@ -31,3 +31,7 @@ Vercel detects the Next.js app. Add these project environment variables before d
 After deployment, add the Vercel production URL to Supabase Auth's allowed redirect URLs.
 
 The dashboard's Recharts show daily review activity, content disposition, and content volume by channel from the saved workspace state.
+
+## Public no-login demo
+
+Keep `dante-blue` as the authenticated, Supabase-backed app. The separate `dante-submission` Vercel project serves the interactive workspace directly from `dante-submission-site/` without a login screen. Its standalone mode uses sample data and saves changes in that visitor's browser only; Gemini and shared database writes are disabled. To refresh that deployment, upload the contents of `dante-submission-site/` to the existing `dante-submission` Vercel project.

@@ -7,6 +7,7 @@
   <title>Dante | Brand intelligence</title>
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/improvements.css">
+  <link rel="stylesheet" href="/demo.css">
 </head>
 <body>
   <div class="app-shell">
@@ -80,6 +81,7 @@
   <div id="impact-preview-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="preview-title">
     <section class="modal-card"><div class="modal-header"><div><div class="eyebrow">APPROVAL PREVIEW</div><h2 id="preview-title">Review impact before approving</h2><p id="preview-subtitle">Dante checks linked items against the proposed source value.</p></div><button id="preview-close" class="modal-close" aria-label="Close preview">×</button></div><div class="preview-source-change"><div><span>APPROVED NOW</span><b id="preview-current">100 GB</b></div><span class="preview-arrow">→</span><div><span>PROPOSED VALUE</span><b id="preview-proposed">200 GB</b></div></div><div class="preview-summary"><span class="preview-count-impact"><b id="preview-impact-count">0</b> need review</span><span class="preview-count-ok"><b id="preview-unchanged-count">0</b> already match</span></div><div id="preview-items" class="preview-items"></div><div class="modal-footer"><span>Approval creates a new source version and routes affected content to reviewers.</span><div><button id="preview-cancel" class="button button-outline">Cancel</button><button id="preview-approve" class="button button-primary">Approve this change <span>→</span></button></div></div></section>
   </div>
+  <script src="/demo-mode.js" defer></script>
   <script src="/app.js" defer></script>
 </body>
 </html>

@@ -7,10 +7,11 @@ import {
   Tooltip, XAxis, YAxis
 } from 'recharts';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || ''
-);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabasePublishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
+const supabase = supabaseUrl && supabasePublishableKey
+  ? createClient(supabaseUrl, supabasePublishableKey)
+  : null;
 
 const CHART_COLORS = { findings: '#d94b45', resolved: '#329665', passed: '#a8b6ac', current: '#329665', review: '#d94b45', exception: '#dfad42', channel: '#62866e' };
 
@@ -111,6 +112,7 @@ export default function AppShell() {
     window.addEventListener('message',listener); return()=>window.removeEventListener('message',listener);
   },[session,refreshState]);
   if(!ready) return <main className="dante-loading">Loading Dante…</main>;
+  if(!supabase) return <main className="dante-loading"><b>Deployment setup needed</b><p>Add the Supabase URL and publishable key to this Vercel project’s environment variables, then redeploy.</p></main>;
   if(!session) return <AuthForm/>;
   if(error) return <main className="dante-loading"><b>Workspace setup needed</b><p>{error}</p><p>Apply <code>supabase/schema.sql</code> in the Supabase SQL Editor, then refresh this page.</p><button className="dante-button secondary" onClick={()=>supabase.auth.signOut()}>Sign out</button></main>;
   return <main>

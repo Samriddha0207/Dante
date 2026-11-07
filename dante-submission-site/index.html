@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f7f8fc">
+  <title>Dante | Brand intelligence</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/improvements.css">
+  <link rel="stylesheet" href="/demo.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#overview" aria-label="Dante home">
+        <span class="brand-mark">d<span>.</span></span>
+        <span class="brand-name">dante<span>brand intelligence</span></span>
+      </a>
+      <div class="workspace-switcher"><span class="workspace-icon">C</span><span><b>Chrollo workspace</b><small>NSEC · Demo environment</small></span><span class="chevron">⌄</span></div>
+      <div class="nav-label">WORKSPACE</div>
+      <nav class="main-nav" aria-label="Main navigation">
+        <a class="nav-item active" href="#overview" data-view="overview" title="Overview"><span class="nav-icon">⌂</span>Overview</a>
+        <a class="nav-item" href="#sources" data-view="sources" title="Approved sources"><span class="nav-icon">▤</span>Approved sources <span class="nav-count" id="source-nav-count">1</span></a>
+        <a class="nav-item" href="#content" data-view="content" title="Content review"><span class="nav-icon">▧</span>Content review</a>
+        <a class="nav-item" href="#impact" data-view="impact" title="Change impact"><span class="nav-icon">↗</span>Change impact <span class="nav-dot" id="impact-nav-dot"></span></a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sidebar-note"><div class="note-icon">✦</div><b>Built for brand clarity</b><p>Approved facts stay connected to the content that uses them.</p></div>
+        <div class="profile"><span class="avatar">SC</span><span><b>Samriddha Chaudhury</b><small>Team lead</small></span><span class="more">•••</span></div>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar"><div class="crumbs"><span>Workspace</span><span class="crumb-sep">/</span><b id="crumb-current">Overview</b></div><div class="top-actions"><span class="environment"><i></i>Prototype workspace</span><button class="icon-button" title="Help">?</button><button class="avatar avatar-small">SC</button></div></header>
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+      <section id="view-overview" class="view">
+        <div class="page-heading"><div><div class="eyebrow">TUESDAY, NOVEMBER 4</div><h1>Good morning, Samriddha <span class="wave">✦</span></h1><p>Keep every message aligned with what your team has approved.</p></div><button class="button button-primary" data-action="open-review"><span>＋</span> Review content</button></div>
+        <div class="stats-grid" id="stats"></div>
+
+        <section class="hero-card" id="change-card">
+          <div class="hero-content"><div class="hero-kicker"><span class="spark">✦</span> CHANGE IMPACT</div><h2>A source changed.<br><em>What needs attention?</em></h2><p>Dante follows approved facts into your content, then brings affected items back for review.</p><div class="hero-actions"><button id="simulate-change" class="button button-light">Update approved fact <span>→</span></button><button class="text-button" data-view-link="impact">See how it works</button></div><div class="hero-foot"><span class="pulse-dot"></span> Interactive prototype · Your demo data stays on this device</div></div>
+          <div class="impact-visual" aria-label="Source-to-content change impact illustration"><div class="visual-orbit orbit-one"></div><div class="visual-orbit orbit-two"></div><div class="visual-node source-node"><span class="node-icon">▤</span><span><small>APPROVED SOURCE</small><b id="visual-source-value">100 GB</b></span><span class="node-version" id="visual-version">v1</span></div><div class="visual-connector"><span></span><small>linked to</small><span></span></div><div class="visual-node content-node"><span class="node-icon doc-icon">▧</span><span><small>CAMPAIGN EMAIL</small><b id="visual-content-value">100 GB</b></span><span class="node-status" id="visual-status">IN SYNC</span></div><div class="visual-caption"><span class="caption-icon">↗</span><span><b id="visual-impact-title">Connected, so change is traceable</b><small id="visual-impact-copy">One approved fact · One linked content item</small></span></div></div>
+        </section>
+
+        <div class="section-row"><div><h2 class="section-title">Workspace pulse</h2><p class="section-subtitle">A clear view of what’s current and what needs a decision.</p></div><button class="quiet-button" data-view-link="impact">View impact history <span>→</span></button></div>
+        <section class="panel trend-panel"><div class="content-heading"><div><h3>Review signals · last 7 days</h3><p>Counts come from recorded checks and reviewer actions in this workspace.</p></div><span class="trend-live-label"><i></i> WORKSPACE ACTIVITY</span></div><div id="trend-chart" role="img" aria-label="Review activity over the last seven days"></div><div class="trend-legend"><span><i class="trend-dot trend-findings"></i>Sent to review</span><span><i class="trend-dot trend-resolved"></i>Resolved</span><span><i class="trend-dot trend-clear"></i>Passed direct check</span></div></section>
+        <div class="dashboard-grid">
+          <section class="panel source-panel" id="source-preview"><div class="panel-heading"><div><div class="panel-icon purple-icon">▤</div></div><div class="panel-heading-copy"><h3>Approved source</h3><p>Current product fact</p></div><button class="kebab" aria-label="More source actions">•••</button></div><div class="source-fact"><div><span class="tiny-label">PRO PLAN STORAGE</span><div class="fact-value" id="fact-value">100 <small>GB</small></div></div><span class="status-pill status-approved"><span></span> Approved</span></div><div class="source-meta"><span>Version <b id="source-version">v1</b></span><span>Updated <b id="source-updated">just now</b></span></div><button class="panel-link" data-view-link="sources">Open source library <span>→</span></button></section>
+          <section class="panel review-panel" id="review-preview"><div class="panel-heading"><div><div class="panel-icon coral-icon">◎</div></div><div class="panel-heading-copy"><h3>Review queue</h3><p>Human decisions keep findings accountable.</p></div><span class="queue-count" id="queue-count">0</span></div><div id="review-queue-body"></div><button class="panel-link" data-view-link="content">Open content review <span>→</span></button></section>
+        </div>
+        <section class="panel content-panel" id="content-preview"><div class="content-heading"><div><h3>Linked content</h3><p>Each item stays connected to the source it uses.</p></div><button class="quiet-button" data-view-link="content">All content <span>→</span></button></div><div class="content-table-wrap"><table><thead><tr><th>CONTENT</th><th>CHANNEL</th><th>LINKED SOURCE</th><th>STATUS</th><th></th></tr></thead><tbody id="content-table-body"></tbody></table></div></section>
+        <footer class="app-footer"><span>Dante · Chrollo workspace</span><button id="reset-demo" class="reset-button">Reset demo scenario</button></footer>
+      </section>
+
+      <section id="view-sources" class="view hidden">
+        <div class="page-heading"><div><div class="eyebrow">KNOWLEDGE BASE</div><h1>Approved sources</h1><p>One trusted version of each fact, rule, and term your content can rely on.</p></div><span class="status-pill status-approved"><span></span> Sources active</span></div>
+        <div class="callout-banner"><span class="banner-icon">✦</span><div><b>Source updates are traceable.</b><p>When an approved value changes, Dante checks linked content and creates a review item.</p></div></div>
+        <label class="source-search-label" for="source-search">Find approved guidance<input id="source-search" type="search" placeholder="Search facts, rules, and terms..."></label>
+        <div id="source-library-list"></div>
+        <section class="panel add-source-panel"><div class="content-heading"><div><h3>Add a brand rule or approved term</h3><p>New guidance starts pending and must be approved before creators can use it.</p></div></div><form id="source-create-form" class="source-create-form"><label for="new-source-title">Source title</label><input id="new-source-title" name="title" required maxlength="100" placeholder="e.g. Product naming guidance"><label for="new-source-kind">Source type</label><select id="new-source-kind" name="kind"><option value="rule">Brand rule</option><option value="term">Required term</option></select><label for="new-source-guidance">Approved wording</label><textarea id="new-source-guidance" name="guidance" required rows="3" maxlength="2000" placeholder="Write the approved rule or term..."></textarea><button class="button button-primary" type="submit">Save as pending source →</button></form><div id="additional-sources"></div></section>
+        <section class="panel history-panel"><div class="content-heading"><div><h3>Version history</h3><p>Approved changes for this source.</p></div></div><div id="version-history"></div></section>
+      </section>
+
+      <section id="view-content" class="view hidden">
+        <div class="page-heading"><div><div class="eyebrow">CONTENT WORKFLOW</div><h1>Content review</h1><p>Check a draft against current guidance and keep the evidence with the decision.</p></div><span class="environment"><i></i> Human review enabled</span></div>
+        <div id="integration-status" class="integration-status" role="status">AI assist requires an explicit content-sharing choice. Workspace data is currently stored locally.</div>
+        <div class="review-layout"><section class="panel submit-panel"><div class="form-heading"><span class="panel-icon purple-icon">▧</span><div><h3>Submit content for review</h3><p>Choose the approved fact, rule, or term this content relies on.</p></div></div><form id="content-form"><label for="content-title">Content title</label><input id="content-title" name="title" required placeholder="e.g. Product launch email"><label for="content-channel">Channel</label><select id="content-channel" name="channel"><option>Email</option><option>Website</option><option>Social</option><option>Sales deck</option><option>Internal document</option></select><label for="content-source">Approved source this content relies on</label><select id="content-source" name="sourceId" required></select><label for="content-body">Draft content</label><textarea id="content-body" name="body" required rows="6" placeholder="Paste content to check..."></textarea><div class="form-hint"><span>✦</span> Selected source: <b id="form-current-fact">Choose a source</b></div><label class="ai-consent"><input type="checkbox" name="aiConsent" value="yes"><span>Allow Gemini to review this text if the workspace has Gemini configured. Text is sent to Google for this review.</span></label><button class="button button-primary form-submit" type="submit">Check against approved source <span>→</span></button></form></section><section class="panel queue-panel"><div class="content-heading"><div><h3>Needs review</h3><p>Prioritized findings with source evidence.</p></div><span class="queue-count" id="content-queue-count">0</span></div><div id="full-review-queue"></div></section></div>
+        <section class="panel content-panel"><div class="content-heading"><div><h3>Monitored content</h3><p>Items connected to Dante sources.</p></div></div><div class="content-table-wrap"><table><thead><tr><th>CONTENT</th><th>CHANNEL</th><th>SOURCE VERSION</th><th>STATUS</th><th></th></tr></thead><tbody id="content-table-full"></tbody></table></div></section>
+      </section>
+
+      <section id="view-impact" class="view hidden">
+        <div class="page-heading"><div><div class="eyebrow">SOURCE → CONTENT → REVIEW</div><h1>Change impact</h1><p>See what a source update can affect, with the evidence beside it.</p></div><button id="impact-update" class="button button-primary">Update approved fact <span>→</span></button></div>
+        <section class="panel impact-summary"><div class="impact-summary-head"><div><div class="panel-icon purple-icon">↗</div><div class="summary-copy"><h3 id="impact-summary-title">Waiting for a source change</h3><p id="impact-summary-subtitle">Update the Pro plan storage fact to see Dante trace the impact.</p></div></div><span id="impact-event-status" class="status-pill status-neutral">No recent change</span></div><div class="change-compare"><div class="compare-cell"><span>PREVIOUSLY APPROVED</span><b id="impact-old">100 GB</b><small id="impact-old-version">Version 1</small></div><div class="compare-arrow">→</div><div class="compare-cell compare-new"><span>CURRENT SOURCE</span><b id="impact-new">100 GB</b><small id="impact-new-version">Version 1</small></div></div></section>
+        <section class="panel impact-map-panel"><div class="content-heading"><div><h3>Source dependency map</h3><p>Every line represents a saved source-to-content relationship.</p></div><div class="map-legend"><span><i class="legend-review"></i>Review</span><span><i class="legend-current"></i>Current</span></div></div><div id="impact-map"></div></section>
+        <section class="panel affected-panel"><div class="content-heading"><div><h3>Affected content</h3><p>Items linked to the updated source that may need review.</p></div><span class="queue-count" id="affected-count">0</span></div><div id="affected-list"></div></section>
+        <div class="impact-principle"><span>✦</span><p><b>Why this matters</b><br>Dante treats a source change as the start of a review, not the end of a one-time check.</p></div>
+        <section class="panel history-panel audit-panel"><div class="content-heading"><div><h3>Decision and change history</h3><p>Source approvals, findings, and reviewer decisions are retained.</p></div></div><div id="audit-history"></div></section>
+      </section>
+    </main>
+  </div>
+  <div id="impact-preview-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="preview-title">
+    <section class="modal-card"><div class="modal-header"><div><div class="eyebrow">APPROVAL PREVIEW</div><h2 id="preview-title">Review impact before approving</h2><p id="preview-subtitle">Dante checks linked items against the proposed source value.</p></div><button id="preview-close" class="modal-close" aria-label="Close preview">×</button></div><div class="preview-source-change"><div><span>APPROVED NOW</span><b id="preview-current">100 GB</b></div><span class="preview-arrow">→</span><div><span>PROPOSED VALUE</span><b id="preview-proposed">200 GB</b></div></div><div class="preview-summary"><span class="preview-count-impact"><b id="preview-impact-count">0</b> need review</span><span class="preview-count-ok"><b id="preview-unchanged-count">0</b> already match</span></div><div id="preview-items" class="preview-items"></div><div class="modal-footer"><span>Approval creates a new source version and routes affected content to reviewers.</span><div><button id="preview-cancel" class="button button-outline">Cancel</button><button id="preview-approve" class="button button-primary">Approve this change <span>→</span></button></div></div></section>
+  </div>
+  <script src="/demo-mode.js" defer></script>
+  <script src="/app.js" defer></script>
+</body>
+</html>

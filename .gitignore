@@ -4,6 +4,9 @@
 node_modules/
 .next/
 .vercel/
+.vercel-cli-data/
+.vercel-cli-config/
+vercel-source/
 .turbo/
 *.tsbuildinfo
 data/demo-state.json

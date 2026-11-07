@@ -43,6 +43,7 @@ function showToast(message) {
 }
 
 async function api(url, body) {
+  if (window.DanteDemo?.standalone) return window.DanteDemo.api(url, body);
   const headers = {};
   if (body) headers['Content-Type'] = 'application/json';
   const accessToken = sessionStorage.getItem('dante-access-token');
@@ -78,6 +79,10 @@ function renderStats() {
 function renderIntegrationStatus() {
   const node = $('#integration-status');
   if (!node) return;
+  if (window.DanteDemo?.standalone) {
+    node.innerHTML = '<b>Public demo — no account required.</b><span> Changes are saved only in this browser. Gemini is disabled in this demo.</span>';
+    return;
+  }
   const gemini = integrationConfig.geminiConfigured
     ? `Gemini assist is available (${escapeHtml(integrationConfig.geminiModel)}); it runs only when the reviewer opts in.`
     : 'Gemini is not configured, so rule checks stay in manual review.';
