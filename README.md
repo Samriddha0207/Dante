@@ -32,6 +32,10 @@ After deployment, add the Vercel production URL to Supabase Auth's allowed redir
 
 The dashboard's Recharts show daily review activity, content disposition, and content volume by channel from the saved workspace state.
 
+## Public webpage monitoring (prototype)
+
+In the authenticated app, the Approved sources view can capture a public HTTPS webpage for reviewer approval, check it again on demand, and show multiple changed text blocks. The first snapshot is not a baseline until a reviewer approves it. If the reviewer routes a change to linked content review, the monitor stays pending and does not accept the new baseline until all linked review items are resolved. The fetcher rejects non-HTTPS and private addresses, validates each redirect target, pins every HTTPS connection to a DNS-validated public IP, applies a timeout, and caps response size. Checks read server-delivered HTML, so client-rendered content may be missed. Scheduled crawling, CMS integrations, and document ingestion are not implemented yet. The public no-login sample workspace does not support server-side webpage fetches.
+
 ## Public no-login demo
 
 Keep `dante-blue` as the authenticated, Supabase-backed app. The separate `dante-submission` Vercel project serves the interactive workspace directly from `dante-submission-site/` without a login screen. Its standalone mode uses sample data and saves changes in that visitor's browser only; Gemini and shared database writes are disabled. To refresh that deployment, upload the contents of `dante-submission-site/` to the existing `dante-submission` Vercel project.

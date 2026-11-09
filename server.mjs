@@ -1,5 +1,9 @@
 import http from 'node:http';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { lookup } from 'node:dns/promises';
+import { BlockList, isIP } from 'node:net';
+import { createHash } from 'node:crypto';
+import https from 'node:https';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -10,6 +14,12 @@ const dataDir = path.join(root, 'data');
 const stateFile = path.join(dataDir, 'demo-state.json');
 const actor = 'Samriddha Chaudhury';
 const requestStore = new AsyncLocalStorage();
+const nonPublicAddresses = new BlockList();
+for (const [address, prefix, family] of [
+  ['0.0.0.0',8,'ipv4'], ['10.0.0.0',8,'ipv4'], ['100.64.0.0',10,'ipv4'], ['127.0.0.0',8,'ipv4'], ['169.254.0.0',16,'ipv4'], ['172.16.0.0',12,'ipv4'],
+  ['192.0.0.0',24,'ipv4'], ['192.0.2.0',24,'ipv4'], ['192.88.99.0',24,'ipv4'], ['192.168.0.0',16,'ipv4'], ['198.18.0.0',15,'ipv4'], ['198.51.100.0',24,'ipv4'], ['203.0.113.0',24,'ipv4'], ['224.0.0.0',4,'ipv4'], ['240.0.0.0',4,'ipv4'],
+  ['::',128,'ipv6'], ['::1',128,'ipv6'], ['::ffff:0:0',96,'ipv6'], ['64:ff9b::',96,'ipv6'], ['64:ff9b:1::',48,'ipv6'], ['100::',64,'ipv6'], ['2001::',23,'ipv6'], ['2001:db8::',32,'ipv6'], ['2002::',16,'ipv6'], ['fc00::',7,'ipv6'], ['fe80::',10,'ipv6'], ['fec0::',10,'ipv6'], ['ff00::',8,'ipv6']
+]) nonPublicAddresses.addSubnet(address, prefix, family);
 
 const fileEnv = {};
 for (const filename of ['.env', '.env.local']) {
@@ -58,9 +68,9 @@ export function seedState() {
     }
   ];
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     workspace: { name: 'Chrollo', institution: 'NSEC' },
-    sources: [source], content: items,
+    sources: [source], content: items, monitors: [],
     audit: [
       makeAudit('source_approved', 'Approved Pro plan storage at 100 GB as version 1.', { sourceId: source.id, sourceVersion: 1 }),
       ...items.map(item => makeAudit('content_linked', `Linked ${item.title} to Pro plan storage v1.`, { contentId: item.id, sourceId: source.id, sourceVersion: 1 }))
@@ -76,12 +86,14 @@ async function saveLocal(state) {
 async function loadLocal() {
   try {
     const state = JSON.parse(await readFile(stateFile, 'utf8'));
-    if (state.schemaVersion !== 4) {
+    if (state.schemaVersion > 5 || state.schemaVersion < 4) {
       const upgraded = seedState();
       await save(upgraded);
       return upgraded;
     }
     state.audit ||= [];
+    state.monitors ||= [];
+    state.schemaVersion = 5;
     return state;
   } catch {
     const state = seedState();
@@ -306,6 +318,165 @@ function previewChange(state, source, value) {
   return { sourceId: source.id, sourceTitle: source.title, current: source.value, proposed: value, unit: source.unit, currentVersion: source.version, linkedCount: linked.length, affected: reviewed.filter(item => item.status !== 'supported'), unchanged: reviewed.filter(item => item.status === 'supported'), items: reviewed };
 }
 
+function isPublicAddress(address) {
+  const version = isIP(address);
+  if (!version) return false;
+  return !nonPublicAddresses.check(address, version === 4 ? 'ipv4' : 'ipv6');
+}
+
+async function assertPublicUrl(value) {
+  let url;
+  try { url = new URL(value); } catch { throw new Error('Enter a valid public webpage URL.'); }
+  if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443')) throw new Error('Only public HTTPS webpages on the standard port are supported.');
+  const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (!host || host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) throw new Error('This host is not publicly reachable.');
+  const addresses = isIP(host) ? [{ address: host, family: isIP(host) }] : await lookup(host, { all: true, verbatim: true }).catch(() => []);
+  if (!addresses.length || addresses.some(({ address }) => !isPublicAddress(address))) throw new Error('This webpage must resolve only to public IP addresses.');
+  return { url, addresses };
+}
+
+function fetchPinnedPage(url, addresses) {
+  const selected = addresses.find(entry => entry.family === 4) || addresses[0];
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finishError = error => { if (settled) return; settled = true; reject(error); };
+    const pinnedLookup = (_hostname, options, callback) => {
+      if (options?.all) callback(null, [{ address: selected.address, family: selected.family || isIP(selected.address) }]);
+      else callback(null, selected.address, selected.family || isIP(selected.address));
+    };
+    const request = https.request(url, {
+      method: 'GET', agent: false, lookup: pinnedLookup,
+      servername: isIP(url.hostname.replace(/^\[|\]$/g, '')) ? undefined : url.hostname,
+      headers: { 'User-Agent': 'DanteSourceMonitor/1.0', Accept: 'text/html,application/xhtml+xml' },
+      signal: AbortSignal.timeout(9000)
+    }, response => {
+      const headers = Object.fromEntries(Object.entries(response.headers).map(([key, value]) => [key.toLowerCase(), Array.isArray(value) ? value.join(', ') : String(value || '')]));
+      if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
+        response.resume();
+        settled = true;
+        resolve({ status: response.statusCode, headers });
+        return;
+      }
+      const declaredLength = Number(headers['content-length'] || 0);
+      if (declaredLength > 1_500_000) {
+        response.destroy(new Error('This webpage is too large to monitor.'));
+        finishError(new Error('This webpage is too large to monitor.'));
+        return;
+      }
+      const chunks = [];
+      let byteCount = 0;
+      response.on('data', chunk => {
+        byteCount += chunk.length;
+        if (byteCount > 1_500_000) {
+          const error = new Error('This webpage is too large to monitor.');
+          response.destroy(error);
+          finishError(error);
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.on('end', () => {
+        if (settled) return;
+        settled = true;
+        resolve({ status: response.statusCode || 0, headers, body: Buffer.concat(chunks).toString('utf8') });
+      });
+      response.on('error', finishError);
+    });
+    request.on('error', finishError);
+    request.end();
+  });
+}
+
+function readableWebText(html) {
+  const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '';
+  const body = html.replace(/<(script|style|noscript|svg|canvas|template|iframe)[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
+    .replace(/<!--([\s\S]*?)-->/g, ' ').replace(/<(?:nav|footer|header)[^>]*>[\s\S]*?<\/(?:nav|footer|header)\s*>/gi, ' ')
+    .replace(/<\/(?:p|div|section|article|li|h[1-6]|tr|br)\s*>/gi, '\n').replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;|&#160;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([\da-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16))).replace(/[ \t\f\v]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  const cleanTitle = title.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  return { title: cleanTitle.slice(0, 200), text: body.slice(0, 30000) };
+}
+
+async function fetchPublicPage(input) {
+  let checked = await assertPublicUrl(input);
+  let url = checked.url;
+  for (let redirect = 0; redirect <= 3; redirect += 1) {
+    const response = await fetchPinnedPage(url, checked.addresses);
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      if (redirect === 3) throw new Error('The webpage redirected too many times.');
+      const location = response.headers.location;
+      if (!location) throw new Error('The webpage returned an invalid redirect.');
+      checked = await assertPublicUrl(new URL(location, url).href);
+      url = checked.url;
+      continue;
+    }
+    if (response.status < 200 || response.status >= 300) throw new Error(`The webpage returned HTTP ${response.status}.`);
+    if (!/text\/html|application\/xhtml\+xml/i.test(response.headers['content-type'] || '')) throw new Error('This URL did not return an HTML webpage.');
+    const html = response.body || '';
+    const page = readableWebText(html);
+    if (page.text.length < 40) throw new Error('Too little text was returned in the page HTML. This page may rely on client-side rendering, which this monitor cannot capture yet.');
+    return { ...page, finalUrl: url.href, hash: createHash('sha256').update(page.text).digest('hex'), checkedAt: new Date().toISOString() };
+  }
+  throw new Error('Could not fetch this webpage.');
+}
+
+function textDiff(before, after) {
+  const groupLines = text => {
+    const lines = text.split(/\n+/).map(line => line.trim()).filter(Boolean);
+    if (lines.length <= 600) return lines;
+    const groupSize = Math.ceil(lines.length / 600);
+    const grouped = [];
+    for (let index = 0; index < lines.length; index += groupSize) grouped.push(lines.slice(index, index + groupSize).join('\n'));
+    return grouped;
+  };
+  const oldLines = groupLines(before), newLines = groupLines(after);
+  const cols = newLines.length + 1;
+  const matrix = new Uint16Array((oldLines.length + 1) * cols);
+  for (let i = oldLines.length - 1; i >= 0; i -= 1) {
+    for (let j = newLines.length - 1; j >= 0; j -= 1) {
+      const cell = i * cols + j;
+      matrix[cell] = oldLines[i] === newLines[j]
+        ? matrix[(i + 1) * cols + j + 1] + 1
+        : Math.max(matrix[(i + 1) * cols + j], matrix[i * cols + j + 1]);
+    }
+  }
+  const removedBlocks = [], addedBlocks = [];
+  let i = 0, j = 0, removed = [], added = [];
+  const flush = () => {
+    if (removed.length) removedBlocks.push(removed.join('\n').slice(0, 700));
+    if (added.length) addedBlocks.push(added.join('\n').slice(0, 700));
+    removed = []; added = [];
+  };
+  while (i < oldLines.length || j < newLines.length) {
+    if (i < oldLines.length && j < newLines.length && oldLines[i] === newLines[j]) { flush(); i += 1; j += 1; continue; }
+    if (j >= newLines.length || (i < oldLines.length && matrix[(i + 1) * cols + j] >= matrix[i * cols + j + 1])) removed.push(oldLines[i++]);
+    else added.push(newLines[j++]);
+  }
+  flush();
+  const maxBlocks = 8;
+  return { removedBlocks: removedBlocks.slice(0, maxBlocks), addedBlocks: addedBlocks.slice(0, maxBlocks), omittedBlocks: Math.max(0, removedBlocks.length - maxBlocks) + Math.max(0, addedBlocks.length - maxBlocks), truncated: removedBlocks.length > maxBlocks || addedBlocks.length > maxBlocks };
+}
+
+function syncMonitorReviewState(state, resolvedItem) {
+  const ids = new Set([resolvedItem.finding?.monitorId, ...(resolvedItem.finding?.relatedMonitorIds || [])].filter(Boolean));
+  for (const monitor of state.monitors || []) {
+    if (!ids.has(monitor.id) || monitor.pending?.action !== 'flag-linked') continue;
+    const stillOpen = state.content.some(item => item.status === 'needs_review' && (item.finding?.monitorId === monitor.id || item.finding?.relatedMonitorIds?.includes(monitor.id)));
+    if (stillOpen) continue;
+    const pending = monitor.pending;
+    monitor.approvedSnapshot = pending.text;
+    monitor.approvedHash = pending.hash;
+    monitor.pending = null;
+    monitor.status = 'current';
+    const at = new Date().toISOString();
+    monitor.checks.unshift({ at, result: 'linked_reviews_complete' });
+    monitor.checks = monitor.checks.slice(0, 12);
+    state.audit.push(makeAudit('monitor_reviewed', `All linked content reviews for ${monitor.title} are complete; the reviewed snapshot is now the comparison baseline.`, { monitorId: monitor.id, sourceId: monitor.sourceId, action: 'linked_reviews_complete' }));
+  }
+}
+
 export async function handleRequest(req, res, adapter = null) {
   return requestStore.run(adapter, async () => {
   try {
@@ -313,7 +484,98 @@ export async function handleRequest(req, res, adapter = null) {
     if (url.pathname.startsWith('/api/')) {
       if (req.method === 'GET' && url.pathname === '/api/config') return json(res, 200, { geminiConfigured: Boolean(process.env.GEMINI_API_KEY), geminiModel: process.env.GEMINI_MODEL || 'gemini-3.6-flash', supabaseConnected: Boolean(requestStore.getStore()), persistence: requestStore.getStore() ? 'supabase-postgres' : 'local-json' });
       let state = await load();
+      state.monitors ||= [];
       if (req.method === 'GET' && url.pathname === '/api/state') return json(res, 200, state);
+
+      if (req.method === 'POST' && url.pathname === '/api/monitors/create') {
+        const body = await readBody(req);
+        const title = String(body.title || '').trim().slice(0, 100);
+        const source = state.sources.find(item => item.id === String(body.sourceId || '') && item.status === 'approved');
+        if (!title || !source) return json(res, 400, { error: 'Add a title and choose an approved source to monitor.' });
+        if (state.monitors.length >= 10) return json(res, 409, { error: 'This prototype supports up to 10 monitored webpages per workspace.' });
+        try {
+          const page = await fetchPublicPage(String(body.url || ''));
+          const monitor = { id: `monitor-${Date.now()}`, title, url: page.finalUrl, sourceId: source.id, sourceTitle: source.title, approvedSnapshot: null, approvedHash: null, pageTitle: page.title, createdAt: page.checkedAt, lastCheckedAt: page.checkedAt, status: 'initial_review', pending: { initial: true, hash: page.hash, text: page.text, initialExcerpt: page.text.slice(0, 3000), detectedAt: page.checkedAt, pageTitle: page.title, diff: textDiff('', page.text) }, checks: [{ at: page.checkedAt, result: 'baseline_pending', pageTitle: page.title }] };
+          state.monitors.push(monitor);
+          state.audit.push(makeAudit('monitor_created', `Captured an initial webpage snapshot for reviewer approval: ${title}, linked to ${source.title}.`, { monitorId: monitor.id, sourceId: source.id }));
+          await save(state);
+          return json(res, 201, state);
+        } catch (error) { return json(res, 422, { error: error.message || 'Could not read this webpage.' }); }
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/monitors/check') {
+        const body = await readBody(req);
+        const monitor = state.monitors.find(row => row.id === String(body.monitorId || ''));
+        if (!monitor) return json(res, 404, { error: 'Webpage monitor not found.' });
+        if (monitor.pending) return json(res, 409, { error: monitor.pending.action === 'flag-linked' ? 'Resolve the linked content reviews before checking this page again.' : 'Review the captured page snapshot before checking it again.' });
+        try {
+          const page = await fetchPublicPage(monitor.url);
+          monitor.lastCheckedAt = page.checkedAt;
+          monitor.pageTitle = page.title || monitor.pageTitle;
+          if (page.hash === monitor.approvedHash) {
+            monitor.status = 'current';
+            monitor.checks.unshift({ at: page.checkedAt, result: 'unchanged', pageTitle: page.title });
+          } else {
+            monitor.pending = { hash: page.hash, text: page.text, detectedAt: page.checkedAt, pageTitle: page.title, diff: textDiff(monitor.approvedSnapshot, page.text) };
+            monitor.status = 'change_pending';
+            monitor.checks.unshift({ at: page.checkedAt, result: 'changed', pageTitle: page.title });
+            state.audit.push(makeAudit('monitor_change_detected', `A monitored webpage changed: ${monitor.title}. Reviewer attention is required.`, { monitorId: monitor.id, sourceId: monitor.sourceId }));
+          }
+          monitor.checks = monitor.checks.slice(0, 12);
+          await save(state);
+          return json(res, 200, state);
+        } catch (error) { return json(res, 422, { error: error.message || 'Could not check this webpage.' }); }
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/monitors/review') {
+        const body = await readBody(req);
+        const monitor = state.monitors.find(row => row.id === String(body.monitorId || ''));
+        const note = String(body.note || '').trim().slice(0, 500);
+        if (!monitor?.pending) return json(res, 409, { error: 'There is no detected webpage change awaiting review.' });
+        if (note.length < 8) return json(res, 400, { error: 'Add a short reviewer note (at least 8 characters).' });
+        if (!['acknowledge', 'flag-linked'].includes(body.action)) return json(res, 400, { error: 'Choose how to handle the webpage change.' });
+        const source = state.sources.find(item => item.id === monitor.sourceId && item.status === 'approved');
+        if (!source) return json(res, 409, { error: 'The approved source linked to this monitor is unavailable.' });
+        const reviewedPending = monitor.pending;
+        if (body.action === 'flag-linked') {
+          const linked = state.content.filter(row => row.linkedSourceIds?.includes(source.id) && row.status !== 'exception');
+          for (const item of linked) {
+            if (item.status === 'needs_review' && item.finding) {
+              item.finding.relatedMonitorIds ||= [];
+              if (!item.finding.relatedMonitorIds.includes(monitor.id)) item.finding.relatedMonitorIds.push(monitor.id);
+              item.finding.monitorChangeNotices ||= [];
+              item.finding.monitorChangeNotices.push({ monitorId: monitor.id, title: monitor.title, note, excerpt: (reviewedPending.diff.addedBlocks?.join('\n') || reviewedPending.initialExcerpt || '').slice(0, 800) });
+            } else {
+              item.status = 'needs_review';
+              const changeExcerpt = (reviewedPending.diff.addedBlocks?.join('\n') || reviewedPending.initialExcerpt || '').slice(0, 800);
+              item.finding = { type: 'Monitored webpage changed', result: 'needs_context', oldValue: null, newValue: null, sourceId: source.id, sourceTitle: source.title, sourceVersion: source.version, sourceVersionAtReview: item.sourceVersions?.[source.id] || source.version, evidenceText: `The monitored page “${monitor.title}” changed. The approved source was not changed automatically. Check whether this content is affected. Reviewer note: ${note}`, evidenceSpan: null, candidates: [], sourceEvidence: changeExcerpt.slice(0, 400), suggestedFix: '', aiMethod: 'page-monitor', aiVerdict: null, priority: priorityFor(item.channel).label, priorityScore: priorityFor(item.channel).score, createdAt: reviewedPending.detectedAt, monitorId: monitor.id, relatedMonitorIds: [monitor.id], monitorChangeNotices: [{ monitorId: monitor.id, title: monitor.title, note, excerpt: changeExcerpt }] };
+              item.latestCheck = { result: 'needs_context', sourceVersion: source.version, checkedAt: reviewedPending.detectedAt };
+              state.audit.push(makeAudit('finding_created', `${item.title} sent for human review after ${monitor.title} changed.`, { contentId: item.id, sourceId: source.id, monitorId: monitor.id }));
+            }
+          }
+          monitor.pending.action = 'flag-linked';
+          monitor.pending.reviewNote = note;
+          monitor.pending.routedAt = new Date().toISOString();
+          monitor.pending.routedCount = linked.length;
+          monitor.status = linked.length ? 'review_items_pending' : 'change_pending';
+          if (linked.length) {
+            monitor.checks.unshift({ at: new Date().toISOString(), result: 'routed_for_review', note });
+            state.audit.push(makeAudit('monitor_reviewed', `${monitor.title}: Routed ${linked.length} linked content item(s) for review. ${note}`, { monitorId: monitor.id, sourceId: source.id, action: body.action }));
+            await save(state);
+            return json(res, 200, state);
+          }
+        }
+        monitor.approvedSnapshot = reviewedPending.text;
+        monitor.approvedHash = reviewedPending.hash;
+        monitor.pending = null;
+        monitor.status = 'current';
+        const actionLabel = body.action === 'flag-linked' ? 'No unreviewed linked content was found' : 'Reviewed; change noted as not affecting approved guidance';
+        monitor.checks.unshift({ at: new Date().toISOString(), result: body.action === 'flag-linked' ? 'reviewed_no_linked_content' : 'reviewed_no_action', note });
+        monitor.checks = monitor.checks.slice(0, 12);
+        state.audit.push(makeAudit('monitor_reviewed', `${monitor.title}: ${actionLabel}. ${note}`, { monitorId: monitor.id, sourceId: source.id, action: body.action }));
+        await save(state);
+        return json(res, 200, state);
+      }
 
       if (req.method === 'POST' && url.pathname === '/api/sources/create') {
         const body = await readBody(req);
@@ -439,6 +701,7 @@ export async function handleRequest(req, res, adapter = null) {
           item.reviewedAt = new Date().toISOString();
           item.finding = { ...item.finding, resolvedAs: 'Approved exception', resolvedAt: item.reviewedAt, resolvedBy: actor, resolutionNote: note };
         } else return json(res, 400, { error: 'Choose revise or exception.' });
+        syncMonitorReviewState(state, item);
         state.audit.push(makeAudit('review_resolved', `${item.title}: ${item.finding.resolvedAs}. ${item.finding.resolutionNote}`, { contentId: item.id, sourceId: source.id, sourceVersion: source.version, action: body.action }));
         await save(state);
         return json(res, 200, state);

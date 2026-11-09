@@ -180,9 +180,10 @@ function findingCard(item) {
   const excerpt = span ? `${escapeHtml(span.before)}<mark class="claim-highlight">${escapeHtml(span.claim)}</mark>${escapeHtml(span.after)}`
     : (finding.candidates || []).map(candidate => `<span class="candidate-claim">${escapeHtml(candidate.evidence?.before || '')}<mark class="claim-highlight">${escapeHtml(candidate.exact)}</mark>${escapeHtml(candidate.evidence?.after || '')}</span>`).join('<br>') || 'No matching claim in this text; reviewer confirmation required.';
   const sourceEvidence = finding.sourceEvidence ? `<div class="finding-source-quote"><b>Approved source evidence</b><br>“${escapeHtml(finding.sourceEvidence)}”</div>` : '';
+  const monitorNotices = (finding.monitorChangeNotices || []).map(notice => `<div class="monitor-review-notice"><b>Page change: ${escapeHtml(notice.title)}</b><p>${escapeHtml(notice.note || '')}</p>${notice.excerpt ? `<small>New page text: ${escapeHtml(notice.excerpt)}</small>` : ''}</div>`).join('');
   const aiSummary = finding.aiVerdict ? `<div class="ai-result"><b>Gemini assist: ${escapeHtml(finding.aiVerdict)}</b> · Advisory only; reviewer decides.</div>` : '';
   const suggestion = finding.suggestedFix ? `<div class="finding-suggestion"><b>Possible edit</b><br>${escapeHtml(finding.suggestedFix)}</div>` : '';
-  const actions = item.status === 'needs_review' ? `<div class="finding-evidence">${escapeHtml(finding.evidenceText || '')}</div><div class="finding-source"><span class="source-chip">SOURCE v${escapeHtml(finding.sourceVersion || '')}</span>${escapeHtml(finding.sourceTitle || 'Approved source')} ${finding.newValue ? `· ${escapeHtml(finding.newValue)} ${escapeHtml(finding.newUnit || '')}` : ''}</div>${sourceEvidence}${aiSummary}${suggestion}<details class="revision-editor"><summary>Review or edit the proposed content</summary><textarea class="revised-content" rows="3" aria-label="Revised content for ${escapeHtml(item.title)}">${escapeHtml(revisedText)}</textarea><small>The saved revision is checked again against the current approved source.</small></details><textarea class="resolution-note" rows="2" placeholder="Reviewer note (required for exceptions or a manual rule decision)" aria-label="Decision note for ${escapeHtml(item.title)}"></textarea><div class="queue-actions"><button class="small-action primary" data-resolve="revise" data-content-id="${escapeHtml(item.id)}">Save revision and verify</button><button class="small-action" data-resolve="exception" data-content-id="${escapeHtml(item.id)}">Approve exception</button></div>` : `<div class="finding-evidence">${escapeHtml(finding.resolutionNote || '')}</div>`;
+  const actions = item.status === 'needs_review' ? `<div class="finding-evidence">${escapeHtml(finding.evidenceText || '')}</div><div class="finding-source"><span class="source-chip">SOURCE v${escapeHtml(finding.sourceVersion || '')}</span>${escapeHtml(finding.sourceTitle || 'Approved source')} ${finding.newValue ? `· ${escapeHtml(finding.newValue)} ${escapeHtml(finding.newUnit || '')}` : ''}</div>${sourceEvidence}${monitorNotices}${aiSummary}${suggestion}<details class="revision-editor"><summary>Review or edit the proposed content</summary><textarea class="revised-content" rows="3" aria-label="Revised content for ${escapeHtml(item.title)}">${escapeHtml(revisedText)}</textarea><small>The saved revision is checked again against the current approved source.</small></details><textarea class="resolution-note" rows="2" placeholder="Reviewer note (required for exceptions or a manual rule decision)" aria-label="Decision note for ${escapeHtml(item.title)}"></textarea><div class="queue-actions"><button class="small-action primary" data-resolve="revise" data-content-id="${escapeHtml(item.id)}">Save revision and verify</button><button class="small-action" data-resolve="exception" data-content-id="${escapeHtml(item.id)}">Approve exception</button></div>` : `<div class="finding-evidence">${escapeHtml(finding.resolutionNote || '')}</div>${monitorNotices}`;
   const priority = finding.priority || 'Standard';
   return `<article class="queue-item"><div class="queue-top"><span class="issue-pill">${escapeHtml(finding.type || 'Needs review')}</span><span class="priority-pill ${priority === 'High priority' ? 'priority-high' : priority === 'Review soon' ? 'priority-medium' : ''}">${escapeHtml(priority)}</span><span class="review-age">${fmtDate(finding.createdAt || item.reviewedAt)}</span></div><h4>${escapeHtml(item.title)}</h4><div class="quote-box">${excerpt}</div>${actions}</article>`;
 }
@@ -203,6 +204,7 @@ function renderReviewQueue() {
 
 function renderSourceLibrary() {
   const source = currentSource();
+  renderPageMonitors();
   $('#source-library-list').innerHTML = `<article class="panel source-library-card"><div class="source-card-top"><div class="source-title-group"><span class="panel-icon purple-icon">▤</span><div><h3 class="source-card-title">${escapeHtml(source.title)}</h3><div class="source-card-meta">${escapeHtml(source.category)} · Approved by Samriddha Chaudhury</div></div></div><span class="status-pill status-approved"><span></span>Approved</span></div><div class="source-fact-large"><div><small>APPROVED VALUE</small><b>${source.value} ${escapeHtml(source.unit)}</b><p>Used by ${sourceLinkedItems(source.id).length} linked ${sourceLinkedItems(source.id).length === 1 ? 'content item' : 'content items'}</p></div><span class="version-badge">VERSION ${source.version}</span></div><form id="source-update-form" class="source-update-form"><label>New approved storage value<input id="source-value-input" type="number" min="1" step="1" value="${source.value}" required></label><button class="button button-primary" type="submit">Approve source update <span>→</span></button></form></article>`;
   const history = [...source.history].reverse();
   $('#version-history').innerHTML = history.map((entry, index) => `<div class="version-row"><span class="version-badge">v${entry.version}</span><div><b>${entry.value} ${escapeHtml(entry.unit)}</b><small>${index === 0 ? 'Current approved fact' : 'Previous approved fact'}</small></div><time>${fmtDate(entry.approvedAt)}</time></div>`).join('');
@@ -220,6 +222,44 @@ function renderSourceLibrary() {
   $('#source-library-list').classList.toggle('hidden', Boolean(query) && !matches(source));
   const matchingSources = appState.sources.filter(item => item.id !== 'pro-storage' && matches(item));
   if (extra) extra.innerHTML = matchingSources.map(item => `<article class="additional-source"><div><span class="source-chip">${escapeHtml(item.category || item.kind)}</span><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.guidance || '')}</p><small>${item.status === 'pending' ? 'Pending approval' : `Approved · version ${item.version}`}</small></div>${item.status === 'pending' ? `<button class="small-action primary" data-approve-source="${escapeHtml(item.id)}">Approve source</button>` : '<span class="status-pill status-approved"><span></span>Approved</span>'}</article>`).join('') || (query && !matches(source) ? '<div class="empty-panel">No approved source matches this search.</div>' : '');
+}
+
+function renderPageMonitors() {
+  const panel = $('#page-monitor-panel');
+  if (!panel) return;
+  const standalone = Boolean(window.DanteDemo?.standalone);
+  panel.classList.toggle('hidden', standalone);
+  if (standalone) return;
+  const select = $('#monitor-source');
+  const selected = select.value;
+  const approved = (appState.sources || []).filter(item => item.status === 'approved');
+  select.innerHTML = approved.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.title)} · ${escapeHtml(item.category || item.kind)}</option>`).join('');
+  if (approved.some(item => item.id === selected)) select.value = selected;
+  const list = $('#page-monitor-list');
+  const monitors = appState.monitors || [];
+  if (!monitors.length) {
+    list.innerHTML = '<div class="monitor-empty">No webpages monitored yet. Add a public page above to save its first snapshot.</div>';
+    return;
+  }
+  list.innerHTML = monitors.map(monitor => {
+    const pending = monitor.pending;
+    const openReviews = pending?.action === 'flag-linked' ? (appState.content || []).filter(item => item.status === 'needs_review' && (item.finding?.monitorId === monitor.id || item.finding?.relatedMonitorIds?.includes(monitor.id))).length : 0;
+    const blocks = (values, empty) => values?.length ? `<ul>${values.map(value => `<li>${escapeHtml(value)}</li>`).join('')}</ul>` : `<p>${empty}</p>`;
+    const changeDetail = pending?.initial
+      ? `<div class="monitor-initial-copy">${escapeHtml(pending.text || pending.initialExcerpt || '')}</div><small class="monitor-diff-limit">This is the full extracted snapshot; scroll to review it before approval.</small>`
+      : pending ? `<div class="monitor-diff-columns"><div><b>Removed text blocks</b>${blocks(pending.diff?.removedBlocks, 'No readable removed text.')}</div><div><b>Added text blocks</b>${blocks(pending.diff?.addedBlocks, 'No readable added text.')}</div></div>${pending.diff?.truncated ? `<small class="monitor-diff-limit">${pending.diff.omittedBlocks || 'Some'} additional changed blocks are omitted from this preview.</small>` : ''}` : '';
+    let evidence = '';
+    if (pending?.action === 'flag-linked') {
+      evidence = `<details class="monitor-diff" open><summary>${pending.initial ? 'Initial snapshot under review' : `Detected text changes · ${fmtDate(pending.detectedAt)}`}</summary>${changeDetail}</details><div class="monitor-waiting"><b>${openReviews} linked content review${openReviews === 1 ? '' : 's'} still open</b><p>The new page snapshot will not become the comparison baseline until every linked review is resolved.</p></div>`;
+    } else if (pending) {
+      const summary = pending.initial ? 'Initial snapshot - review before monitoring' : `Detected text changes · ${fmtDate(pending.detectedAt)}`;
+      const acknowledge = pending.initial ? 'Approve this starting snapshot' : 'Mark reviewed - guidance unaffected';
+      evidence = `<details class="monitor-diff" open><summary>${summary}</summary>${changeDetail}</details><label class="monitor-note-label">Reviewer note<textarea class="monitor-review-note" rows="2" placeholder="What does this page snapshot mean for the approved source?" required></textarea></label><div class="monitor-review-actions"><button class="small-action" data-monitor-review="acknowledge" data-monitor-id="${escapeHtml(monitor.id)}">${acknowledge}</button><button class="small-action primary" data-monitor-review="flag-linked" data-monitor-id="${escapeHtml(monitor.id)}">Send linked content to review</button></div>`;
+    }
+    const status = pending?.action === 'flag-linked' ? `<span class="status-pill status-review">${openReviews} review${openReviews === 1 ? '' : 's'} pending</span>` : pending?.initial ? '<span class="status-pill status-review">Baseline needs approval</span>' : pending ? '<span class="status-pill status-review">Change needs review</span>' : '<span class="status-pill status-current"><span></span>Up to date</span>';
+    const checkLabel = pending?.action === 'flag-linked' ? 'Reviews pending' : pending ? 'Resolve first' : 'Check now';
+    return `<article class="monitor-card" data-monitor-card="${escapeHtml(monitor.id)}"><div class="monitor-card-head"><div><h4>${escapeHtml(monitor.title)}</h4><a href="${escapeHtml(monitor.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(monitor.url)}</a><small>Linked source: ${escapeHtml(monitor.sourceTitle)} · Last checked ${fmtDate(monitor.lastCheckedAt)}</small></div><div class="monitor-card-controls">${status}<button class="small-action" data-monitor-check="${escapeHtml(monitor.id)}" ${pending ? 'disabled' : ''}>${checkLabel}</button></div></div>${evidence}</article>`;
+  }).join('');
 }
 
 function updateSelectedSourceHint() {
@@ -265,7 +305,7 @@ function renderImpact() {
 function renderAudit() {
   const events = [...(appState.audit || [])].reverse().slice(0, 12);
   $('#audit-history').innerHTML = events.length ? events.map(event => {
-    const label = ({ source_submitted: 'Source submitted', source_approved: 'Source approved', content_linked: 'Source linked', content_reviewed: 'Content checked', finding_created: 'Review finding', review_resolved: 'Reviewer decision', finding_auto_cleared: 'Finding cleared' })[event.type] || 'Workspace event';
+    const label = ({ source_submitted: 'Source submitted', source_approved: 'Source approved', content_linked: 'Source linked', content_reviewed: 'Content checked', finding_created: 'Review finding', review_resolved: 'Reviewer decision', finding_auto_cleared: 'Finding cleared', monitor_created: 'Webpage monitoring started', monitor_change_detected: 'Page change detected', monitor_reviewed: 'Page change reviewed' })[event.type] || 'Workspace event';
     return `<article class="audit-row"><span class="audit-marker ${event.type === 'finding_created' ? 'audit-warning' : event.type === 'review_resolved' ? 'audit-decision' : ''}"></span><div><div class="audit-title">${escapeHtml(label)} <span>${fmtDate(event.at)}</span></div><p>${escapeHtml(event.details)}</p><small>${escapeHtml(event.actor)}</small></div></article>`;
   }).join('') : '<div class="empty-panel">No changes recorded yet.</div>';
 }
@@ -341,6 +381,22 @@ document.addEventListener('click', async event => {
     if (event.target.closest('#reset-demo')) {
       appState = await api('/api/reset', {}); render(); showView('overview'); showToast('Demo scenario reset to the approved 100 GB fact.'); return;
     }
+    const monitorCheck = event.target.closest('[data-monitor-check]');
+    if (monitorCheck) { monitorCheck.disabled = true; appState = await api('/api/monitors/check', { monitorId: monitorCheck.dataset.monitorCheck }); render(); showToast('Page check complete.'); return; }
+    const monitorReview = event.target.closest('[data-monitor-review]');
+    if (monitorReview) {
+      const card = monitorReview.closest('[data-monitor-card]');
+      const note = card?.querySelector('.monitor-review-note')?.value?.trim() || '';
+      if (note.length < 8) { showToast('Add a reviewer note of at least 8 characters.'); return; }
+      const monitorId = monitorReview.dataset.monitorId;
+      const wasInitial = appState.monitors.find(row => row.id === monitorId)?.pending?.initial === true;
+      appState = await api('/api/monitors/review', { monitorId, action: monitorReview.dataset.monitorReview, note });
+      const updatedMonitor = appState.monitors.find(row => row.id === monitorId);
+      render();
+      showToast(monitorReview.dataset.monitorReview === 'flag-linked'
+        ? updatedMonitor?.status === 'current' ? 'No open linked items; snapshot approved after review.' : 'Linked items queued; the monitor stays pending until reviews close.'
+        : wasInitial ? 'Initial snapshot approved; monitoring is active.' : 'Change recorded; approved guidance left unchanged.'); return;
+    }
     const approveSourceButton = event.target.closest('[data-approve-source]');
     if (approveSourceButton) { appState = await api('/api/sources/approve', { sourceId: approveSourceButton.dataset.approveSource }); render(); showToast('Source approved and available for content review.'); return; }
     if (resolveButton) {
@@ -353,7 +409,7 @@ document.addEventListener('click', async event => {
     }
     if (openReview) { showView('content'); return; }
     if (event.target.closest('[data-action="open-review"]')) showView('content');
-  } catch (error) { showToast(error.message); }
+  } catch (error) { const monitorButton = event.target.closest('[data-monitor-check]'); if (monitorButton) monitorButton.disabled = false; showToast(error.message); }
 });
 
 document.addEventListener('submit', async event => {
@@ -377,6 +433,12 @@ document.addEventListener('submit', async event => {
     event.preventDefault();
     const form = new FormData(event.target);
     try { appState = await api('/api/sources/create', { title: form.get('title'), kind: form.get('kind'), guidance: form.get('guidance') }); render(); event.target.reset(); showToast('New source saved as pending approval.'); }
+    catch (error) { showToast(error.message); }
+  }
+  if (event.target.id === 'monitor-create-form') {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    try { appState = await api('/api/monitors/create', { title: form.get('title'), url: form.get('url'), sourceId: form.get('sourceId') }); render(); event.target.reset(); showToast('Initial snapshot captured. Review and approve it before monitoring starts.'); }
     catch (error) { showToast(error.message); }
   }
 });

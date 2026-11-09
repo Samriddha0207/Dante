@@ -9,7 +9,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.lib.colors import HexColor
 from xml.sax.saxutils import escape
 
-OUT = r'output/pdf/Dante_Hackathon_Proposal.pdf'
+OUT = r'output/pdf/Dante_Hackathon_Proposal_Round2_Round3.pdf'
 NAVY = HexColor('#3E2D46'); BLUE = HexColor('#756084'); TEAL = HexColor('#C7654A')
 PALE = HexColor('#F2EAF2'); LIGHT = HexColor('#FAF6F2'); INK = colors.black
 MUTED = colors.black; BORDER = colors.black; AMBER = HexColor('#FFF1DE')
@@ -121,12 +121,31 @@ rounds=[('Round 1 - Proposal','Submit the concept, workflow, stack, and team pla
 story.append(table([[cell('Round',True),cell('Planned work and outcome',True)]]+[[cell(a),cell(b)] for a,b in rounds],[48*mm,118*mm]))
 story.append(P('Align round tasks with the official schedule and judging criteria.','SmallX'))
 
-story += [section(8,'Expected impact'),P('Dante aims to catch stale or unsupported content earlier and cut time spent searching for current guidance. The prototype will show the affected draft, its source, and the reviewer decision; any performance claims will be measured before reporting.')]
-story.append(KeepTogether([section(9,'Future scope'),bullet('Ingest PDF and DOCX guidelines with administrator approval.'),bullet('Check images for text, logo versions, and contrast.'),bullet('Track drift by campaign, channel, and team over time.'),bullet('Connect to publishing tools with configurable approval gates.'),bullet('Add multilingual rules, audit exports, and finer access controls.')]))
-story += [section(10,'Team details'),P('<b>Chrollo</b> | CodeNexus | NSEC<br/>Team contact: Samriddha Chaudhury - samriddhachaudhury@gmail.com')]
+story += [PageBreak(),section(8,'Round 2 - What we built'),P('We turned the proposal into an interactive prototype with a complete source-to-review loop:')]
+round2=[
+    ('Approved source library','Add guidance as pending, approve it, and retain the current version.'),
+    ('Evidence-linked checks','Check exact product facts and required terms; Gemini can assist with semantic rule review when enabled and explicitly selected.'),
+    ('Change impact preview','Preview which linked items still match or need attention before approving a changed source.'),
+    ('Human decisions and history','Revise content, record a reasoned exception, and keep source changes, findings, and decisions in an audit trail.'),
+    ('Persistent workspace and analytics','Save authenticated workspace state in Supabase Postgres and show review activity with Recharts.')]
+story.append(table([[cell('New in the prototype',True),cell('What it does',True)]]+[[cell(a),cell(b)] for a,b in round2],[49*mm,117*mm]))
+story.append(P('The demo uses linked sample content to make the workflow repeatable. It does not automatically crawl live websites or publishing systems.','SmallX'))
+story += [section(9,'Round 3 - Expected'),P('Next, we would move from a strong guided prototype toward a workflow teams can connect to real channels:')]
+round3=[
+    ('Connect real content sources','Add website/CMS connectors and scheduled checks, with clear permissions and a preview before any action.'),
+    ('Bring in team guidance','Import PDF/DOCX policies with page-level evidence and reviewer approval before they become trusted sources.'),
+    ('Support team review','Add shared workspaces, reviewer assignments, approval roles, and notifications.'),
+    ('Measure quality over time','Add channel-level drift trends and evaluate checks against a reviewed test set; report measured precision and misses.'),
+    ('Broaden coverage','Explore multilingual rules and image/logo checks, with uncertain results routed to a person.')]
+story.append(table([[cell('Potential next feature',True),cell('Round 3 direction',True)]]+[[cell(a),cell(b)] for a,b in round3],[49*mm,117*mm]))
+story.append(P('These are proposed extensions, not features currently claimed as working. We would prioritise integrations and document evidence first, then expand after testing reviewer accuracy.','SmallX'))
+
+story += [section(10,'Expected impact'),P('Dante aims to catch stale or unsupported content earlier and cut time spent searching for current guidance. The prototype demonstrates how a changed fact can lead to a targeted review; impact claims should be measured with pilot users before reporting.')]
+story.append(KeepTogether([section(11,'Future scope'),bullet('Ingest PDF and DOCX guidelines with administrator approval.'),bullet('Check images for text, logo versions, and contrast.'),bullet('Track drift by campaign, channel, and team over time.'),bullet('Connect to publishing tools with configurable approval gates.'),bullet('Add multilingual rules, audit exports, and finer access controls.')]))
+story += [section(12,'Team details'),P('<b>Chrollo</b> | CodeNexus | NSEC<br/>Team contact: Samriddha Chaudhury - samriddhachaudhury@gmail.com')]
 teamrows=[[cell('Member',True),cell('Role',True)],[cell('Samriddha Chaudhury'),cell('Team Lead; Full Stack Developer')],[cell('Md Rizwaan Rahaman'),cell('Full Stack Developer')]]
 story.append(table(teamrows,[67*mm,99*mm]))
-story += [section(11,'Planned contributions'),P('<b>Samriddha Chaudhury, Team Lead:</b> product scope, backend, data model, source links, and change-impact logic.'),P('<b>Md Rizwaan Rahaman:</b> frontend screens, review workflow, dashboard, and demo content. Both will integrate, validate, and present the prototype.')]
+story += [section(13,'Planned contributions'),P('<b>Samriddha Chaudhury, Team Lead:</b> product scope, backend, data model, source links, and change-impact logic.'),P('<b>Md Rizwaan Rahaman:</b> frontend screens, review workflow, dashboard, and demo content. Both will integrate, validate, and present the prototype.')]
 doc=SimpleDocTemplate(OUT,pagesize=A4,rightMargin=22*mm,leftMargin=22*mm,topMargin=22*mm,bottomMargin=22*mm,title='Dante Hackathon Project Proposal',author='Team Chrollo')
 doc.build(story,onFirstPage=header_footer,onLaterPages=header_footer)
 print(OUT)
