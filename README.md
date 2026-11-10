@@ -1,45 +1,121 @@
 # Dante
 
-Dante keeps approved brand guidance connected to the content that uses it. It checks claims, routes uncertain or conflicting copy to a person, and records the evidence and decision.
+Dante connects approved brand and product guidance to the content that uses it. It flags changed or conflicting claims with source evidence, routes decisions to a reviewer, and records the outcome.
+
+## Live deployments
+
+- **Authenticated workspace:** [dante-blue.vercel.app](https://dante-blue.vercel.app/) - Supabase sign-in required.
+- **Public landing page and sample interaction:** [dante-submission.vercel.app](https://dante-submission.vercel.app/) - no sign-in; the embedded 100 GB to 200 GB walkthrough uses sample data and does not write to the workspace.
+
+The sign-in page displays shared judge-demo credentials. They are public: use the associated account only for the demo and do not store private data in it. The matching Supabase Auth user must also exist; displaying credentials does not create that account.
+
+## Requirements
+
+- Git
+- Node.js **22.13.x** (22.13 or later, below 23) or **24 or later**
+- npm
+- A Supabase project for the authenticated workspace
 
 ## Run locally
 
-Use Node.js 22.13 or newer (or Node.js 24), because the PDF parser requires it.
-
-```powershell
+```bash
+git clone https://github.com/Samriddha0207/Dante.git
+cd Dante
 npm install
+```
+
+Create `.env.local` from the example file:
+
+```bash
+cp .env.example .env.local
+```
+
+On Windows PowerShell, use `Copy-Item .env.example .env.local` instead. Set the required Supabase values described below, then start the app:
+
+```bash
 npm run dev
 ```
 
-Open <http://localhost:3000>. Copy `.env.example` to `.env.local`. Set the Supabase URL and publishable key for sign-in and shared workspaces. Add the server-only keys below as needed. Never put the Supabase service role key or webhook encryption key in a `NEXT_PUBLIC_` variable or commit `.env.local`.
+Open [http://localhost:3000](http://localhost:3000). The sign-in page supports Supabase email/password sign-in and account creation.
 
-## Supabase and deployment setup
+### Run the local JSON prototype
 
-Run `supabase/schema.sql` and then `supabase/round3_migration.sql` in the Supabase SQL Editor. The second migration upgrades the prototype state table to shared workspaces, adds member roles and one-use invitations, and creates private upload storage. Existing per-user workspaces are migrated as their own admin-owned workspaces.
+To explore the separate no-login prototype without configuring Supabase, use:
 
-Set these Vercel environment variables and redeploy:
+```bash
+npm run dev:local-json
+```
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY` (server only; required for shared state, member management, and private uploads)
-- `GEMINI_API_KEY` (server only; optional, enables Gemini assistance after per-submission consent)
-- `GEMINI_MODEL` (optional; defaults to `gemini-3.6-flash`)
-- `DANTE_INTEGRATION_ENCRYPTION_KEY` (server only; 32-byte hex key, required to save webhook credentials)
-- `NEXT_PUBLIC_APP_URL` (optional; used when creating invitation links)
+Open [http://localhost:3000](http://localhost:3000). It serves the vanilla JavaScript app from `public/` and stores state locally in `data/demo-state.json`; it is not the authenticated Next.js workspace and its data is not shared with Vercel.
 
-Generate an encryption key locally with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`; add the output only in Vercel's server environment settings. Set the Supabase Auth Site URL and redirect allowlist to the deployed app URL. If either migration or the service role key is missing, the authenticated workspace shows a setup error rather than silently falling back to local data.
+### Environment variables
 
-## Implemented workflows
+| Variable | Required? | Purpose |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Yes for the authenticated app | Supabase project URL. |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes for the authenticated app | Browser-safe Supabase publishable key (or legacy anon key). |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes for workspace data | Server-only Supabase secret key (`sb_secret_...`) or legacy `service_role` key. Despite the variable name, the current `sb_secret_...` key is accepted here. |
+| `GEMINI_API_KEY` | Optional | Enables consent-based Gemini semantic review, policy extraction/OCR, and image review. Without it, deterministic checks remain available. |
+| `GEMINI_MODEL` | Optional | Gemini model name; defaults to `gemini-3.6-flash` in the current code. |
+| `DANTE_INTEGRATION_ENCRYPTION_KEY` | Optional | Required to save webhook bearer credentials. Must be 64 hexadecimal characters (32 bytes). |
+| `NEXT_PUBLIC_APP_URL` | Optional | Canonical app URL for invitation links. Set to `http://localhost:3000` for local testing and the production URL when deployed. |
+| `DANTE_SUBMISSION_LANDING` | Optional | Set to `1` only for the public landing deployment. It renders the sample landing and interactive walkthrough instead of the authenticated workspace. |
 
-- **Source library:** submit facts, rules, required terms, logo assets, and language-tagged guidance. Changes require reviewer approval and retain versions.
-- **Content review:** link a draft to an approved source; run deterministic quantity and exact-term checks; optionally send brand rules and the draft to Gemini for evidence-linked semantic assistance. Language tags are validated and cross-language rule checks account for negation, obligation, exceptions, and idioms. Quotes must match the original Unicode text exactly; Gemini's output remains advisory and never makes the final decision. Exact required-term checks remain literal by design.
-- **PDF/DOCX policy intake:** extract text from up to 100 PDF pages or a DOCX under 8 MB. Likely rule sentences retain page or paragraph citations. English, Hindi, Bengali, Spanish, French, and German instruction terms are recognized by the candidate filter; other languages may need manual rule entry. If PDF pages have little or no selectable text, uploaders can explicitly opt in to Gemini OCR; page-level OCR candidates remain unapproved and must be checked against the original. Scanned pages are not sent to Gemini without that consent.
-- **Image review:** upload PNG, JPEG, or WebP under 4 MB; opt in to sending it to Gemini for text transcription and advisory logo/contrast findings. Logo references are private uploads and new versions wait for administrator approval. Contrast findings are visual estimates, not measured WCAG contrast ratios.
-- **Drift analytics:** Recharts summarize saved review events by date, campaign, channel, submitter, and content status. These are workspace data, not external benchmark figures.
-- **Publishing gate:** configure an HTTPS webhook for a CMS or automation endpoint. A reviewer must authorize current content before Dante dispatches it; webhook secrets are encrypted at rest and requests are DNS-validated, pinned, and idempotency-keyed. This is a generic webhook contract, not a built-in connector for a specific CMS. The receiving endpoint must understand Dante's `dante.content.approved` JSON event.
-- **Workspace access:** admins invite email-bound users through seven-day links and assign admin, reviewer, or creator roles. Server routes enforce the permissions; creators submit and view, reviewers decide, and admins manage members and source assets.
-- **Audit:** export the workspace event history to JSON or CSV. Exports include actor, action, time, and related content/source IDs.
+Generate a webhook-encryption key with:
 
-## Data and limits
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
 
-The interactive app persists workspace state in Supabase Postgres. Original policy and logo files use the private `dante-sources` Storage bucket. The app does not auto-publish or auto-approve guidance. The page monitor reads server-delivered HTML on demand; client-rendered text and scheduled checks are not supported. Gemini image and text analysis is advisory and is sent to Google only after explicit consent. The unauthenticated `dante-submission-site/` remains a separate, sample-data demonstration and does not write to the Supabase workspace.
+Never put `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, or `DANTE_INTEGRATION_ENCRYPTION_KEY` in a `NEXT_PUBLIC_` variable, commit them, or expose them in browser code. `.env.local` is ignored by Git. The Supabase secret key bypasses Row Level Security and must stay server-side.
+
+## Supabase setup
+
+For a new Supabase project:
+
+1. Copy the project URL, publishable key, and secret key from **Project Settings > API Keys** into `.env.local` using the variable names above.
+2. In the Supabase SQL Editor, run `supabase/schema.sql`, then run `supabase/round3_migration.sql`. Run these in order on a new database. The migration converts existing per-user state into admin-owned workspaces, adds roles and invitations, and creates the private `dante-sources` Storage bucket. Do not rerun a migration on a database that has already been migrated.
+3. In **Authentication > URL Configuration**, add `http://localhost:3000/**` and `https://dante-blue.vercel.app/**` to the Redirect URLs allowlist. Set the Site URL to the canonical URL for the environment you are testing: localhost for local-only work, or the deployed app URL for production.
+4. Start Dante with `npm run dev` and create or sign in to a Supabase Auth account. If email confirmation is enabled in Supabase, confirm the account before signing in.
+
+The Supabase URL, publishable key, and secret key must all belong to the same project. Without the database scripts or server secret, the app shows a workspace setup error after sign-in.
+
+## Deploy to Vercel
+
+Import [Samriddha0207/Dante](https://github.com/Samriddha0207/Dante) in Vercel and use the repository root. Vercel detects Next.js automatically. Add the production environment variables from the table above; the authenticated workspace requires the three Supabase variables. Add Gemini and webhook encryption only when those features are needed. After changing environment variables, create a new deployment so the deployment receives them.
+
+For the public landing deployment, use the same repository with `DANTE_SUBMISSION_LANDING=1`; the public landing does not use the authenticated workspace for its embedded sample interaction. Keep the normal `dante` deployment without that flag for the full Supabase-backed app.
+
+Add both local and production redirect URLs in Supabase Auth when you use both environments. Keep service and AI keys in Vercel's server-side environment variables; do not prefix them with `NEXT_PUBLIC_`.
+
+## What the product includes
+
+- **Approved source library:** facts, rules, required terms, and logo assets with versions and reviewer approval.
+- **Evidence-linked review:** deterministic quantity and exact-term checks; optional Gemini semantic assistance with source and draft excerpts for human review.
+- **Change impact:** find linked content that may need review after a source update.
+- **Policy intake:** PDF and DOCX extraction with page or paragraph references; optional consent-based OCR for scanned PDF pages. Extracted rules stay pending until an administrator approves them.
+- **Image review:** opt-in text transcription and advisory logo/contrast checks, including comparison to an approved logo reference.
+- **Page monitor:** on-demand checks of server-delivered public page text. Scheduled monitoring and native CMS connectors are not included.
+- **Workspace operations:** Supabase Auth, PostgreSQL, private Storage, workspace roles, invitations, audit history, JSON/CSV export, and Recharts activity analytics.
+- **Publishing gate:** reviewer-approved dispatch to a configured HTTPS webhook; this is a generic webhook contract, not a native connector for a particular CMS.
+
+## Architecture
+
+- **UI:** Next.js 16, React 19, JavaScript, and CSS.
+- **API and authorization:** Next.js Route Handler (`app/api/[...path]/route.js`) and shared server logic in `server.mjs`. Routes validate the Supabase user and workspace membership before accessing workspace data.
+- **Data and files:** Supabase Auth, PostgreSQL, and private Storage.
+- **AI:** Gemini GenerateContent API, called server-side only after explicit consent. Results are advisory; server-side evidence checks and human decisions remain in the workflow.
+- **Charts and hosting:** Recharts for workspace activity; Vercel for deployment.
+
+## Verify a local build
+
+```bash
+node --test tests/round3-features.test.mjs
+npm run build
+```
+
+Start the production build locally with `npm run start` after `npm run build`.
+
+## Data handling and limitations
+
+Workspace state is stored in Supabase PostgreSQL; original policy and logo files stay in private Storage. Gemini receives submitted text, documents, or images only when the relevant reviewer/uploader consent is given. Gemini output is advisory and does not approve rules or publish content automatically. Image contrast findings are visual estimates, not WCAG contrast measurements. The public landing walkthrough is sample-only; its state is held in the page and is not the shared Supabase workspace.

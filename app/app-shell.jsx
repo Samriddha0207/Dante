@@ -41,6 +41,11 @@ function AuthForm() {
       <button className="dante-button" disabled={busy}>{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}</button>
     </form>
     {message && <div className={`dante-message ${message.startsWith('Check')||message.startsWith('Signed')?'ok':''}`} role="status">{message}</div>}
+    {mode === 'signin' && <aside className="dante-demo-credentials" aria-label="Judge demo credentials">
+      <strong>Judge demo login</strong>
+      <span>Email: <code>textemaildante@gmail.com</code></span>
+      <span>Password: <code>abcd1234</code></span>
+    </aside>}
     <p style={{marginTop:18,marginBottom:0}}>{mode==='signin'?'New to Dante?':'Already have an account?'} <button className="dante-auth-toggle" onClick={()=>{setMode(mode==='signin'?'signup':'signin');setMessage('');}}>{mode==='signin'?'Create an account':'Sign in'}</button></p>
   </section></main>;
 }

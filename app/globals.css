@@ -30,6 +30,9 @@ button, input { font: inherit; }
 .dante-auth-card label { display:block; margin:13px 0 6px; color:#515865; font-size:12px; font-weight:650; }
 .dante-auth-card input { width:100%; border:1px solid #dfe2e8; border-radius:9px; padding:11px 12px; outline-color:#789f84; }
 .dante-auth-card .dante-button { width:100%; margin-top:17px; }
+.dante-demo-credentials { display:grid; gap:5px; margin-top:16px; padding:11px 13px; border:1px solid #dce8df; border-radius:10px; background:#f5faf6; color:#34453a; font-size:12px; line-height:1.45; }
+.dante-demo-credentials strong { color:#25382c; font-size:12px; }
+.dante-demo-credentials code { color:#1f2e24; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; }
 .dante-auth-toggle { border:0; padding:0; background:none; color:#355f46; cursor:pointer; font-size:13px; font-weight:650; }
 .dante-message { margin-top:12px; color:#7a3333; font-size:12px; line-height:1.5; }
 .dante-message.ok { color:#2f6444; }
