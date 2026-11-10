@@ -58,16 +58,18 @@ Open [http://localhost:3000](http://localhost:3000). It serves the vanilla JavaS
 | `GEMINI_API_KEY` | Optional | Enables consent-based Gemini semantic review, policy extraction/OCR, and image review. Without it, deterministic checks remain available. |
 | `GEMINI_MODEL` | Optional | Gemini model name; defaults to `gemini-3.6-flash` in the current code. |
 | `DANTE_INTEGRATION_ENCRYPTION_KEY` | Optional | Required to save webhook bearer credentials. Must be 64 hexadecimal characters (32 bytes). |
+| `CRON_SECRET` | Required for scheduled page monitoring | Random server-only bearer secret protecting the Vercel Cron endpoint. |
 | `NEXT_PUBLIC_APP_URL` | Optional | Canonical app URL for invitation links. Set to `http://localhost:3000` for local testing and the production URL when deployed. |
 | `DANTE_SUBMISSION_LANDING` | Optional | Set to `1` only for the public landing deployment. It renders the sample landing and interactive walkthrough instead of the authenticated workspace. |
 
-Generate a webhook-encryption key with:
+Generate server secrets with:
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
 ```
 
-Never put `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, or `DANTE_INTEGRATION_ENCRYPTION_KEY` in a `NEXT_PUBLIC_` variable, commit them, or expose them in browser code. `.env.local` is ignored by Git. The Supabase secret key bypasses Row Level Security and must stay server-side.
+Use the 64-character hex output for `DANTE_INTEGRATION_ENCRYPTION_KEY` and the base64url output for `CRON_SECRET`. Never put `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `DANTE_INTEGRATION_ENCRYPTION_KEY`, or `CRON_SECRET` in a `NEXT_PUBLIC_` variable, commit them, or expose them in browser code. `.env.local` is ignored by Git. The Supabase secret key bypasses Row Level Security and must stay server-side.
 
 ## Supabase setup
 
@@ -80,7 +82,6 @@ For a new Supabase project:
 
 The Supabase URL, publishable key, and secret key must all belong to the same project. Without the database scripts or server secret, the app shows a workspace setup error after sign-in.
 
-
 ## What the product includes
 
 - **Approved source library:** facts, rules, required terms, and logo assets with versions and reviewer approval.
@@ -88,7 +89,9 @@ The Supabase URL, publishable key, and secret key must all belong to the same pr
 - **Change impact:** find linked content that may need review after a source update.
 - **Policy intake:** PDF and DOCX extraction with page or paragraph references; optional consent-based OCR for scanned PDF pages. Extracted rules stay pending until an administrator approves them.
 - **Image review:** opt-in text transcription and advisory logo/contrast checks, including comparison to an approved logo reference.
-- **Page monitor:** on-demand checks of server-delivered public page text. Scheduled monitoring and native CMS connectors are not included.
+- **Page monitor:** on-demand and Vercel-scheduled checks of server-delivered public page text (15-minute, hourly, or daily intervals). A reviewer approves the baseline and resolves every detected change; JavaScript-rendered pages may not be captured.
+- **Team review:** workspace roles, reviewer assignment, and an in-app assigned-first review queue. Dante does not send email or push notifications.
+- **Accuracy evaluation:** a small curated baseline plus reviewer-labeled workspace examples; reports review precision, recall, false alarms, and missed review flags. Metrics are prototype-scale and do not claim production accuracy or automatically retrain the checker.
 - **Workspace operations:** Supabase Auth, PostgreSQL, private Storage, workspace roles, invitations, audit history, JSON/CSV export, and Recharts activity analytics.
 - **Publishing gate:** reviewer-approved dispatch to a configured HTTPS webhook; this is a generic webhook contract, not a native connector for a particular CMS.
 

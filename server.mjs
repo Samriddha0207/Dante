@@ -70,7 +70,7 @@ export function seedState() {
   return {
     schemaVersion: 6,
     workspace: { name: 'Chrollo', institution: 'NSEC' },
-    sources: [source], content: items, monitors: [], documents: [], imageReviews: [],
+    sources: [source], content: items, monitors: [], documents: [], imageReviews: [], evaluationCases: [],
     integrations: { publishing: null },
     audit: [
       makeAudit('source_approved', 'Approved Pro plan storage at 100 GB as version 1.', { sourceId: source.id, sourceVersion: 1 }),
@@ -572,7 +572,7 @@ export async function handleRequest(req, res, adapter = null) {
       if (req.method === 'GET' && url.pathname === '/api/config') return json(res, 200, { geminiConfigured: Boolean(process.env.GEMINI_API_KEY), geminiModel: process.env.GEMINI_MODEL || 'gemini-3.6-flash', supabaseConnected: Boolean(requestStore.getStore()), persistence: requestStore.getStore() ? 'supabase-postgres' : 'local-json' });
       let state = await load();
       state.monitors ||= [];
-      state.documents ||= []; state.imageReviews ||= []; state.integrations ||= { publishing: null };
+      state.documents ||= []; state.imageReviews ||= []; state.integrations ||= { publishing: null }; state.evaluationCases ||= [];
       if (requestStore.getStore()?.role) {
         state.workspaceAccess = { workspaceId: requestStore.getStore().workspaceId, role: requestStore.getStore().role, actor: requestStore.getStore().actor };
         state.workspaceMembers = requestStore.getStore().members || [];
@@ -761,14 +761,16 @@ export async function handleRequest(req, res, adapter = null) {
       }
 
       if (req.method === 'POST' && url.pathname === '/api/monitors/create') {
+        if (requireRole(res, ['admin','reviewer'])) return;
         const body = await readBody(req);
         const title = String(body.title || '').trim().slice(0, 100);
         const source = state.sources.find(item => item.id === String(body.sourceId || '') && item.status === 'approved');
         if (!title || !source) return json(res, 400, { error: 'Add a title and choose an approved source to monitor.' });
+        const scheduleMinutes = [15, 60, 1440].includes(Number(body.scheduleMinutes)) ? Number(body.scheduleMinutes) : 1440;
         if (state.monitors.length >= 10) return json(res, 409, { error: 'This prototype supports up to 10 monitored webpages per workspace.' });
         try {
           const page = await fetchPublicPage(String(body.url || ''));
-          const monitor = { id: `monitor-${Date.now()}`, title, url: page.finalUrl, sourceId: source.id, sourceTitle: source.title, approvedSnapshot: null, approvedHash: null, pageTitle: page.title, createdAt: page.checkedAt, lastCheckedAt: page.checkedAt, status: 'initial_review', pending: { initial: true, hash: page.hash, text: page.text, initialExcerpt: page.text.slice(0, 3000), detectedAt: page.checkedAt, pageTitle: page.title, diff: textDiff('', page.text) }, checks: [{ at: page.checkedAt, result: 'baseline_pending', pageTitle: page.title }] };
+          const monitor = { id: `monitor-${Date.now()}`, title, url: page.finalUrl, sourceId: source.id, sourceTitle: source.title, scheduleMinutes, nextCheckAt: new Date(Date.parse(page.checkedAt) + scheduleMinutes * 60_000).toISOString(), approvedSnapshot: null, approvedHash: null, pageTitle: page.title, createdAt: page.checkedAt, lastCheckedAt: page.checkedAt, status: 'initial_review', pending: { initial: true, hash: page.hash, text: page.text, initialExcerpt: page.text.slice(0, 3000), detectedAt: page.checkedAt, pageTitle: page.title, diff: textDiff('', page.text) }, checks: [{ at: page.checkedAt, result: 'baseline_pending', pageTitle: page.title }] };
           state.monitors.push(monitor);
           state.audit.push(makeAudit('monitor_created', `Captured an initial webpage snapshot for reviewer approval: ${title}, linked to ${source.title}.`, { monitorId: monitor.id, sourceId: source.id }));
           await save(state);
@@ -777,6 +779,7 @@ export async function handleRequest(req, res, adapter = null) {
       }
 
       if (req.method === 'POST' && url.pathname === '/api/monitors/check') {
+        if (requireRole(res, ['admin','reviewer'])) return;
         const body = await readBody(req);
         const monitor = state.monitors.find(row => row.id === String(body.monitorId || ''));
         if (!monitor) return json(res, 404, { error: 'Webpage monitor not found.' });
@@ -784,6 +787,7 @@ export async function handleRequest(req, res, adapter = null) {
         try {
           const page = await fetchPublicPage(monitor.url);
           monitor.lastCheckedAt = page.checkedAt;
+          monitor.nextCheckAt = new Date(Date.parse(page.checkedAt) + (monitor.scheduleMinutes || 1440) * 60_000).toISOString();
           monitor.pageTitle = page.title || monitor.pageTitle;
           if (page.hash === monitor.approvedHash) {
             monitor.status = 'current';
@@ -798,6 +802,41 @@ export async function handleRequest(req, res, adapter = null) {
           await save(state);
           return json(res, 200, state);
         } catch (error) { return json(res, 422, { error: error.message || 'Could not check this webpage.' }); }
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/monitors/check-due') {
+        if (!requestStore.getStore()?.cron) return json(res, 403, { error: 'This endpoint is reserved for the verified scheduled monitor job.' });
+        const now = Date.now();
+        const due = state.monitors.filter(row => !row.pending && row.approvedHash && Date.parse(row.nextCheckAt || 0) <= now).slice(0, 5);
+        const results = [];
+        for (const monitor of due) {
+          try {
+            const page = await fetchPublicPage(monitor.url);
+            monitor.lastCheckedAt = page.checkedAt;
+            monitor.nextCheckAt = new Date(Date.parse(page.checkedAt) + (monitor.scheduleMinutes || 1440) * 60_000).toISOString();
+            monitor.pageTitle = page.title || monitor.pageTitle;
+            if (page.hash === monitor.approvedHash) {
+              monitor.status = 'current';
+              monitor.checks.unshift({ at: page.checkedAt, result: 'unchanged', pageTitle: page.title, trigger: 'scheduled' });
+              results.push({ id: monitor.id, result: 'unchanged' });
+            } else {
+              monitor.pending = { hash: page.hash, text: page.text, detectedAt: page.checkedAt, pageTitle: page.title, diff: textDiff(monitor.approvedSnapshot, page.text) };
+              monitor.status = 'change_pending';
+              monitor.checks.unshift({ at: page.checkedAt, result: 'changed', pageTitle: page.title, trigger: 'scheduled' });
+              state.audit.push(makeAudit('monitor_change_detected', `A scheduled check found a webpage change: ${monitor.title}. Reviewer attention is required.`, { monitorId: monitor.id, sourceId: monitor.sourceId }));
+              results.push({ id: monitor.id, result: 'changed' });
+            }
+            monitor.checks = monitor.checks.slice(0, 12);
+          } catch (error) {
+            monitor.lastCheckError = String(error.message || 'Page check failed.').slice(0, 200);
+            monitor.nextCheckAt = new Date(now + Math.max(60, monitor.scheduleMinutes || 1440) * 60_000).toISOString();
+            monitor.checks.unshift({ at: new Date().toISOString(), result: 'error', detail: monitor.lastCheckError, trigger: 'scheduled' });
+            monitor.checks = monitor.checks.slice(0, 12);
+            results.push({ id: monitor.id, result: 'error' });
+          }
+        }
+        if (due.length) await save(state);
+        return json(res, 200, { checked: due.length, results });
       }
 
       if (req.method === 'POST' && url.pathname === '/api/monitors/review') {
@@ -843,6 +882,7 @@ export async function handleRequest(req, res, adapter = null) {
         monitor.approvedSnapshot = reviewedPending.text;
         monitor.approvedHash = reviewedPending.hash;
         monitor.pending = null;
+        monitor.nextCheckAt = new Date(Date.now() + (monitor.scheduleMinutes || 1440) * 60_000).toISOString();
         monitor.status = 'current';
         const actionLabel = body.action === 'flag-linked' ? 'No unreviewed linked content was found' : 'Reviewed; change noted as not affecting approved guidance';
         monitor.checks.unshift({ at: new Date().toISOString(), result: body.action === 'flag-linked' ? 'reviewed_no_linked_content' : 'reviewed_no_action', note });
@@ -950,6 +990,69 @@ export async function handleRequest(req, res, adapter = null) {
         state.content.unshift(item);
         state.audit.push(makeAudit('content_reviewed', `${title} checked against ${source.title} v${source.version}: ${analysis.result}.`, { contentId: item.id, sourceId: source.id, sourceVersion: source.version, result: analysis.result, priority: item.finding?.priority || 'No review needed' }));
         if (item.finding) state.audit.push(makeAudit('finding_created', `${title} added to review queue: ${item.finding.type.toLowerCase()}.`, { contentId: item.id, sourceId: source.id, sourceVersion: source.version, priority: item.finding.priority }));
+        await save(state);
+        return json(res, 201, state);
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/content/assign') {
+        if (requireRole(res, ['admin'])) return;
+        const body = await readBody(req);
+        const item = state.content.find(row => row.id === String(body.contentId || ''));
+        const member = (state.workspaceMembers || []).find(row => row.user_id === String(body.userId || ''));
+        if (!item || item.status !== 'needs_review') return json(res, 409, { error: 'Choose an item that is still waiting for review.' });
+        if (body.userId && (!member || !['admin','reviewer'].includes(member.role))) return json(res, 400, { error: 'Assign the item to an active workspace reviewer or administrator.' });
+        if (body.userId === item.assignedReviewerId || (!body.userId && !item.assignedReviewerId)) return json(res, 200, state);
+        if (!body.userId) {
+          delete item.assignedReviewerId; delete item.assignedReviewerEmail; delete item.assignedAt;
+          state.audit.push(makeAudit('review_assignment_cleared', `Cleared reviewer assignment for ${item.title}.`, { contentId: item.id }));
+        } else {
+          item.assignedReviewerId = member.user_id;
+          item.assignedReviewerEmail = member.email || member.user_id;
+          item.assignedAt = new Date().toISOString();
+          state.audit.push(makeAudit('review_assigned', `Assigned ${item.title} to ${item.assignedReviewerEmail}.`, { contentId: item.id, assignedReviewerId: member.user_id }));
+        }
+        await save(state);
+        return json(res, 200, state);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/evaluation/summary') {
+        const cases = [
+          { text: 'Pro plan includes 100 GB of storage.', expected: 'supported' },
+          { text: 'Pro storage is 100 GB.', expected: 'supported' },
+          { text: 'Pro plan comes with 200 GB storage.', expected: 'conflict' },
+          { text: 'Get 50 GB storage with Pro.', expected: 'conflict' },
+          { text: 'The Pro plan has 100 GB RAM.', expected: 'needs_context' },
+          { text: 'Storage may be 100 GB or 80 GB.', expected: 'needs_context' },
+          { text: 'Pro offers 100 GB storage and 200 GB memory.', expected: 'supported' },
+          { text: 'Our most powerful Pro plan.', expected: 'missing' },
+          { text: 'Pro storage is 100 GB, but this capacity is not included.', expected: 'conflict' },
+          { text: 'Pro storage may be 100 GB; confirm the limit with product.', expected: 'needs_context' }
+        ];
+        const baseline = cases.map(testCase => ({ expected: testCase.expected, result: analyzeClaim(testCase.text, seedState().sources[0]).result }));
+        const observed = [...baseline, ...(state.evaluationCases || []).map(({ expected, result }) => ({ expected, result }))];
+        const labels = ['supported','conflict','needs_context','missing','ambiguous'];
+        const matrix = Object.fromEntries(labels.map(label => [label, Object.fromEntries(labels.map(prediction => [prediction, 0]))]));
+        for (const row of observed) matrix[row.expected][row.result] = (matrix[row.expected][row.result] || 0) + 1;
+        const positiveLabels = ['conflict','needs_context','missing','ambiguous'];
+        const tp = observed.filter(row => positiveLabels.includes(row.expected) && positiveLabels.includes(row.result)).length;
+        const fp = observed.filter(row => !positiveLabels.includes(row.expected) && positiveLabels.includes(row.result)).length;
+        const fn = observed.filter(row => positiveLabels.includes(row.expected) && !positiveLabels.includes(row.result)).length;
+        return json(res, 200, { cases: observed.length, savedLabels: state.evaluationCases?.length || 0, labels: 'curated prototype cases plus reviewer-labeled examples', precision: tp + fp ? tp / (tp + fp) : 0, recall: tp + fn ? tp / (tp + fn) : 0, falsePositives: fp, missedReviewFlags: fn, matrix });
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/evaluation/label') {
+        if (requireRole(res, ['admin'])) return;
+        const body = await readBody(req);
+        const text = String(body.text || '').trim().slice(0, 12000);
+        const expected = String(body.expected || '');
+        if (text.length < 8 || !['supported','conflict','needs_context','missing','ambiguous'].includes(expected)) return json(res, 400, { error: 'Enter at least eight characters and select a valid reviewer label.' });
+        const source = state.sources.find(item => item.id === String(body.sourceId || '') && item.status === 'approved' && item.kind === 'fact');
+        if (!source) return json(res, 400, { error: 'Choose an approved product fact for this evaluation example.' });
+        state.evaluationCases ||= [];
+        const result = analyzeClaim(text, source).result;
+        state.evaluationCases.unshift({ id: `eval-${Date.now()}`, sourceId: source.id, text, expected, result, reviewedBy: requestStore.getStore()?.actor || actor, reviewedAt: new Date().toISOString() });
+        state.evaluationCases = state.evaluationCases.slice(0, 100);
+        state.audit.push(makeAudit('evaluation_labeled', `A reviewer labeled an evaluation example as ${expected}; the engine returned ${result}.`, { evaluationId: state.evaluationCases[0].id }));
         await save(state);
         return json(res, 201, state);
       }

@@ -5,6 +5,7 @@ let activeView = 'overview';
 let toastTimer = null;
 let pendingSourceChange = null;
 let integrationConfig = { geminiConfigured: false, supabaseConnected: false, persistence: 'local-json' };
+let evaluationSummary = null;
 let authReady = Promise.resolve();
 if (window.parent !== window) {
   authReady = new Promise(resolve => {
@@ -188,13 +189,19 @@ function findingCard(item) {
   const canReview=['admin','reviewer'].includes(appState.workspaceAccess?.role||'admin');
   const actions = item.status === 'needs_review' ? `<div class="finding-evidence">${escapeHtml(finding.evidenceText || '')}</div><div class="finding-source"><span class="source-chip">SOURCE v${escapeHtml(finding.sourceVersion || '')}</span>${escapeHtml(finding.sourceTitle || 'Approved source')} ${finding.newValue ? `· ${escapeHtml(finding.newValue)} ${escapeHtml(finding.newUnit || '')}` : ''}</div>${sourceEvidence}${monitorNotices}${aiSummary}${suggestion}${canReview?`<details class="revision-editor"><summary>Review or edit the proposed content</summary><textarea class="revised-content" rows="3" aria-label="Revised content for ${escapeHtml(item.title)}">${escapeHtml(revisedText)}</textarea><small>The saved revision is checked again against the current approved source.</small></details><textarea class="resolution-note" rows="2" placeholder="Reviewer note (required for exceptions or a manual rule decision)" aria-label="Decision note for ${escapeHtml(item.title)}"></textarea><div class="queue-actions"><button class="small-action primary" data-resolve="revise" data-content-id="${escapeHtml(item.id)}">Save revision and verify</button><button class="small-action" data-resolve="exception" data-content-id="${escapeHtml(item.id)}">Approve exception</button></div>`:'<p class="review-waiting-note">Awaiting a workspace reviewer decision.</p>'}` : `<div class="finding-evidence">${escapeHtml(finding.resolutionNote || '')}</div>${monitorNotices}`;
   const priority = finding.priority || 'Standard';
-  return `<article class="queue-item"><div class="queue-top"><span class="issue-pill">${escapeHtml(finding.type || 'Needs review')}</span><span class="priority-pill ${priority === 'High priority' ? 'priority-high' : priority === 'Review soon' ? 'priority-medium' : ''}">${escapeHtml(priority)}</span><span class="review-age">${fmtDate(finding.createdAt || item.reviewedAt)}</span></div><h4>${escapeHtml(item.title)}</h4><div class="quote-box">${excerpt}</div>${actions}</article>`;
+  const members = appState.workspaceMembers || [];
+  const assignment = appState.workspaceAccess?.role === 'admin' && item.status === 'needs_review' && members.some(member => ['admin','reviewer'].includes(member.role)) ? `<label class="review-assignment">Assign reviewer<select data-review-assignment="${escapeHtml(item.id)}"><option value="">Unassigned</option>${members.filter(member => ['admin','reviewer'].includes(member.role)).map(member => `<option value="${escapeHtml(member.user_id)}" ${item.assignedReviewerId === member.user_id ? 'selected' : ''}>${escapeHtml(member.email || member.user_id)} · ${escapeHtml(member.role)}</option>`).join('')}</select></label>` : item.assignedReviewerEmail ? `<small class="review-assigned-to">Assigned to ${escapeHtml(item.assignedReviewerEmail)}</small>` : '';
+  return `<article class="queue-item"><div class="queue-top"><span class="issue-pill">${escapeHtml(finding.type || 'Needs review')}</span><span class="priority-pill ${priority === 'High priority' ? 'priority-high' : priority === 'Review soon' ? 'priority-medium' : ''}">${escapeHtml(priority)}</span><span class="review-age">${fmtDate(finding.createdAt || item.reviewedAt)}</span></div><h4>${escapeHtml(item.title)}</h4>${assignment}<div class="quote-box">${excerpt}</div>${actions}</article>`;
 }
 
 function renderReviewQueue() {
-  const pending = pendingItems();
+  const currentUserId = appState.currentUser?.id;
+  const pending = pendingItems().sort((a, b) => Number(b.assignedReviewerId === currentUserId) - Number(a.assignedReviewerId === currentUserId) || (b.finding.priorityScore || 0) - (a.finding.priorityScore || 0));
   const overview = $('#review-queue-body');
   const full = $('#full-review-queue');
+  const assignedCount = pending.filter(item => currentUserId && item.assignedReviewerId === currentUserId).length;
+  const assignmentNotice = $('#assigned-review-notice');
+  if (assignmentNotice) assignmentNotice.textContent = assignedCount ? `${assignedCount} item${assignedCount === 1 ? '' : 's'} assigned to you. Assigned work appears first.` : 'Assigned items are highlighted for the signed-in reviewer.';
   if (!pending.length) {
     const empty = '<div class="queue-empty"><span class="empty-check">✓</span><span><b>All clear</b><br>There are no content items waiting for review.</span></div>';
     overview.innerHTML = empty;
@@ -203,6 +210,25 @@ function renderReviewQueue() {
     overview.innerHTML = findingCard(pending[0]);
     full.innerHTML = pending.map(findingCard).join('');
   }
+}
+
+function renderEvaluation() {
+  const panel = $('#evaluation-panel');
+  if (!panel) return;
+  panel.classList.toggle('hidden', Boolean(window.DanteDemo?.standalone));
+  $('#evaluation-label-form')?.classList.toggle('hidden', (appState.workspaceAccess?.role || 'admin') !== 'admin');
+  const select = $('#evaluation-source');
+  if (select) {
+    const previous = select.value;
+    const sources = (appState.sources || []).filter(item => item.status === 'approved' && (item.kind === 'fact' || !item.kind));
+    select.innerHTML = sources.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.title)}</option>`).join('') || '<option value="">No approved fact source</option>';
+    if (sources.some(item => item.id === previous)) select.value = previous;
+  }
+  if (!evaluationSummary) return;
+  $('#evaluation-metrics').innerHTML = `<div><b>${evaluationSummary.cases}</b><span>labeled checks</span></div><div><b>${Math.round(evaluationSummary.precision * 100)}%</b><span>review precision</span></div><div><b>${Math.round(evaluationSummary.recall * 100)}%</b><span>review recall</span></div><div><b>${evaluationSummary.falsePositives}</b><span>false alarms</span></div><div><b>${evaluationSummary.missedReviewFlags}</b><span>missed review flags</span></div>`;
+  const labels = ['supported','conflict','needs_context','missing','ambiguous'];
+  $('#evaluation-confusion').innerHTML = `<p>Confusion matrix · rows are reviewer labels; columns are checker results. Any non-supported result counts as sent for review.</p><div class="evaluation-table-wrap"><table><thead><tr><th>Reviewer ↓ / Checker →</th>${labels.map(label => `<th>${escapeHtml(label.replace('_',' '))}</th>`).join('')}</tr></thead><tbody>${labels.map(expected => `<tr><th>${escapeHtml(expected.replace('_',' '))}</th>${labels.map(result => `<td>${evaluationSummary.matrix?.[expected]?.[result] || 0}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  $('#evaluation-caption').textContent = `${evaluationSummary.savedLabels} workspace examples labeled by reviewers · ${evaluationSummary.cases - evaluationSummary.savedLabels} curated baseline cases · small-set prototype evaluation.`;
 }
 
 function renderSourceLibrary() {
@@ -233,6 +259,9 @@ function renderPageMonitors() {
   const standalone = Boolean(window.DanteDemo?.standalone);
   panel.classList.toggle('hidden', standalone);
   if (standalone) return;
+  const role = appState.workspaceAccess?.role || 'admin';
+  const canMonitor = ['admin','reviewer'].includes(role);
+  $('#monitor-create-form')?.classList.toggle('hidden', !canMonitor);
   const select = $('#monitor-source');
   const selected = select.value;
   const approved = (appState.sources || []).filter(item => item.status === 'approved' && item.kind !== 'asset');
@@ -261,7 +290,8 @@ function renderPageMonitors() {
     }
     const status = pending?.action === 'flag-linked' ? `<span class="status-pill status-review">${openReviews} review${openReviews === 1 ? '' : 's'} pending</span>` : pending?.initial ? '<span class="status-pill status-review">Baseline needs approval</span>' : pending ? '<span class="status-pill status-review">Change needs review</span>' : '<span class="status-pill status-current"><span></span>Up to date</span>';
     const checkLabel = pending?.action === 'flag-linked' ? 'Reviews pending' : pending ? 'Resolve first' : 'Check now';
-    return `<article class="monitor-card" data-monitor-card="${escapeHtml(monitor.id)}"><div class="monitor-card-head"><div><h4>${escapeHtml(monitor.title)}</h4><a href="${escapeHtml(monitor.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(monitor.url)}</a><small>Linked source: ${escapeHtml(monitor.sourceTitle)} · Last checked ${fmtDate(monitor.lastCheckedAt)}</small></div><div class="monitor-card-controls">${status}<button class="small-action" data-monitor-check="${escapeHtml(monitor.id)}" ${pending ? 'disabled' : ''}>${checkLabel}</button></div></div>${evidence}</article>`;
+    const intervalLabel = monitor.scheduleMinutes === 15 ? 'every 15 minutes' : monitor.scheduleMinutes === 60 ? 'hourly' : 'daily';
+    return `<article class="monitor-card" data-monitor-card="${escapeHtml(monitor.id)}"><div class="monitor-card-head"><div><h4>${escapeHtml(monitor.title)}</h4><a href="${escapeHtml(monitor.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(monitor.url)}</a><small>Linked source: ${escapeHtml(monitor.sourceTitle)} · ${intervalLabel} · next check ${fmtDate(monitor.nextCheckAt)}</small></div><div class="monitor-card-controls">${status}${canMonitor ? `<button class="small-action" data-monitor-check="${escapeHtml(monitor.id)}" ${pending ? 'disabled' : ''}>${checkLabel}</button>` : ''}</div></div>${evidence}</article>`;
   }).join('');
 }
 
@@ -376,7 +406,7 @@ function render() {
   if (!appState) return;
   const resetButton = $('#reset-demo');
   if (resetButton) resetButton.classList.toggle('hidden', Boolean(appState.workspaceAccess?.workspaceId));
-  renderStats(); renderTrendChart(); renderStatusAndFacts(); renderIntegrationStatus(); renderReviewQueue(); renderSourceLibrary(); renderAudit(); renderDocumentsAndImages();
+  renderStats(); renderTrendChart(); renderStatusAndFacts(); renderIntegrationStatus(); renderReviewQueue(); renderSourceLibrary(); renderAudit(); renderDocumentsAndImages(); renderEvaluation();
   renderContentTable('#content-table-body'); renderContentTable('#content-table-full');
   const dateText = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date()).toUpperCase();
   $('.eyebrow').textContent = dateText;
@@ -482,6 +512,12 @@ document.addEventListener('click', async event => {
 });
 
 document.addEventListener('submit', async event => {
+  const submittedForm = event.target;
+  if (submittedForm.dataset.submitting === 'true') { event.preventDefault(); return; }
+  submittedForm.dataset.submitting = 'true';
+  const submitButton = submittedForm.querySelector('button[type="submit"]');
+  if (submitButton) submitButton.disabled = true;
+  try {
   if(event.target.id==='logo-upload-form'){
     event.preventDefault();const form=new FormData(event.target);const file=form.get('file');
     try{const data=await fileToBase64(file);appState=await api('/api/assets/logo',{sourceId:form.get('sourceId')||undefined,name:file.name,data,mimeType:file.type,guidance:form.get('guidance')});render();event.target.reset();showToast('Logo or new logo version submitted for approval.');}catch(error){showToast(error.message);}
@@ -529,19 +565,30 @@ document.addEventListener('submit', async event => {
   if (event.target.id === 'monitor-create-form') {
     event.preventDefault();
     const form = new FormData(event.target);
-    try { appState = await api('/api/monitors/create', { title: form.get('title'), url: form.get('url'), sourceId: form.get('sourceId') }); render(); event.target.reset(); showToast('Initial snapshot captured. Review and approve it before monitoring starts.'); }
+    try { appState = await api('/api/monitors/create', { title: form.get('title'), url: form.get('url'), sourceId: form.get('sourceId'), scheduleMinutes: Number(form.get('scheduleMinutes')) }); render(); event.target.reset(); showToast('Initial snapshot captured. Approve it to start scheduled checks.'); }
     catch (error) { showToast(error.message); }
+  }
+  if (event.target.id === 'evaluation-label-form') {
+    event.preventDefault(); const form = new FormData(event.target);
+    try { appState = await api('/api/evaluation/label', { text: form.get('text'), sourceId: form.get('sourceId'), expected: form.get('expected') }); evaluationSummary = await api('/api/evaluation/summary'); render(); event.target.reset(); showToast('Reviewer label saved; quality metrics updated.'); }
+    catch (error) { showToast(error.message); }
+  }
+  } finally {
+    delete submittedForm.dataset.submitting;
+    if (submitButton) submitButton.disabled = false;
   }
 });
 
 document.addEventListener('change', event => { if (event.target.id === 'content-source') updateSelectedSourceHint(); });
 document.addEventListener('change',async event=>{const select=event.target.closest('[data-member-role]');if(!select)return;try{appState=await api('/api/workspace/member-role',{userId:select.dataset.memberRole,role:select.value});render();showToast('Workspace role updated.');}catch(error){showToast(error.message);render();}});
+document.addEventListener('change',async event=>{const select=event.target.closest('[data-review-assignment]');if(!select)return;try{appState=await api('/api/content/assign',{contentId:select.dataset.reviewAssignment,userId:select.value});render();showToast(select.value?'Reviewer assigned.':'Reviewer assignment cleared.');}catch(error){showToast(error.message);render();}});
 document.addEventListener('change',async event=>{if(event.target.id!=='workspace-selector'||!event.target.value)return;const id=event.target.value;sessionStorage.setItem('dante-workspace-id',id);window.parent.postMessage({type:'dante-workspace-select',workspaceId:id},window.location.origin);try{appState=await api('/api/state');render();showToast(`Switched to ${event.target.selectedOptions[0]?.textContent||'workspace'}.`);}catch(error){showToast(error.message);}});
 document.addEventListener('input', event => { if (event.target.id === 'source-search') renderSourceLibrary(); });
 
 async function boot() {
   try { await authReady; [appState, integrationConfig] = await Promise.all([api('/api/state'), api('/api/config')]); render(); }
   catch (error) { document.body.innerHTML = `<main style="font:14px Segoe UI,Arial;padding:50px;color:#202334"><h1>Dante could not load</h1><p>${escapeHtml(error.message)}</p></main>`; }
+  if (appState && !window.DanteDemo?.standalone) { try { evaluationSummary = await api('/api/evaluation/summary'); renderEvaluation(); } catch {} }
 }
 
 function fileToBase64(file) {

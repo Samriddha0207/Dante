@@ -253,10 +253,10 @@ class ArchitectureDiagram(Flowable):
         x1, x2, x3 = 0, 62 * mm, 124 * mm
         upper_y, lower_y = 40 * mm, 3 * mm
         self.node(x1, upper_y, box_w, box_h, 'DANTE WORKSPACE', ['Next.js 16 + React 19', 'JavaScript and CSS UI'], GREEN_PALE, GREEN)
-        self.node(x2, upper_y, box_w, box_h, 'API + REVIEW LOGIC', ['Auth and role checks', 'Rules, evidence, approvals'], BLUE_PALE, BLUE)
+        self.node(x2, upper_y, box_w, box_h, 'API + REVIEW LOGIC', ['Auth, role, and cron checks', 'Rules, evidence, approvals'], BLUE_PALE, BLUE)
         self.node(x3, upper_y, box_w, box_h, 'SUPABASE', ['Auth + Postgres', 'Private Storage'], GREEN_PALE, GREEN)
         self.node(x1, lower_y, box_w, box_h, 'GEMINI (OPT-IN)', ['OCR / semantic help', 'Structured JSON; advisory'], GOLD_PALE, GOLD)
-        self.node(x2, lower_y, box_w, box_h, 'RECHARTS', ['Workspace review history', 'Operational drift views'], BLUE_PALE, BLUE)
+        self.node(x2, lower_y, box_w, box_h, 'QUALITY + ANALYTICS', ['Recharts operational views', 'Labeled-set evaluation'], BLUE_PALE, BLUE)
         self.node(x3, lower_y, box_w, box_h, 'HUMAN + WEBHOOK', ['Reviewer decision', 'Approved dispatch only'], RED_PALE, RED)
         upper_mid = upper_y + box_h / 2
         self.arrow(x1 + box_w, upper_mid, x2, upper_mid, GREEN)
@@ -311,9 +311,9 @@ features = [
     ('PDF and DOCX policy intake', 'Extract likely rules with page or paragraph references. Administrators approve candidates before they become active.'),
     ('Scanned PDF OCR', 'When a page has little selectable text, the uploader can opt in to Gemini OCR. Candidates remain unapproved and carry a verification warning.'),
     ('Campaign image review', 'With explicit consent, Gemini transcribes visible copy and gives advisory logo and contrast findings; an approved logo image can be compared.'),
-    ('Public page monitor', 'Capture and check public, server-readable page text on demand; reviewers decide whether a change affects guidance.'),
-    ('Drift analytics', 'Recharts show saved review activity by time, channel, campaign, owner, and current status. These are workspace signals, not accuracy scores.'),
-    ('Workspace access and audit', 'Supabase Auth, workspace roles, email-bound invitations, private files, and CSV/JSON audit export.'),
+    ('Public page monitor', 'Schedule checks of public server-readable pages every 15 minutes, hourly, or daily. Initial snapshots and changes require reviewer decisions.'),
+    ('Analytics and quality evaluation', 'Recharts show workspace activity. A confusion matrix combines curated cases with reviewer-labeled examples to report precision, recall, false alarms, and missed review flags.'),
+    ('Workspace access and audit', 'Supabase Auth, roles, email-bound invitations, reviewer assignment with an assigned-first queue, private files, and CSV/JSON audit export.'),
     ('Publishing gate', 'A reviewer authorizes current content before Dante sends it to a configured generic HTTPS webhook.'),
     ('Safety controls', 'Server-side authorization, source-version checks, opt-in Gemini calls, private storage, and reset protection for persistent workspaces.'),
 ]
@@ -331,25 +331,27 @@ grid.setStyle(TableStyle([
 story += [grid, Spacer(1, 2 * mm), P('Dante does not auto-approve extracted rules or publish content without a reviewer action. Gemini outputs remain advisory.', 'BodySmall')]
 story += [PageBreak()]
 
-# Page 3 - The three Round 3 focus areas and delivery status
+# Page 3 - The Round 3 commitments and delivery status
 story += section('Round 3 focus areas and current status', RED)
-story += [P('The three planned areas are listed below with an honest implementation status.', 'BodyX'), Spacer(1, 2 * mm)]
+story += [P('The Round 2 proposal named five outcomes. This table distinguishes what is now built from what remains limited.', 'BodyX'), Spacer(1, 2 * mm)]
 status_rows = [
-    [P('FOCUS AREA', 'CellBold'), P('STATUS', 'CellBold'), P('WHAT THE PROTOTYPE DOES TODAY', 'CellBold')],
-    [P('Connect real content sources', 'CellBold'), P('PARTIAL', 'Status'), P('Monitors public-page text on demand and records detected changes for review. A generic webhook can dispatch reviewer-approved content. Native CMS connectors, OAuth setup, and scheduled scans are not implemented.', 'Cell')],
-    [P('Ingest policy documents with traceable evidence', 'CellBold'), P('IMPLEMENTED', 'Status'), P('Reads text PDFs and DOCX; preserves page or paragraph references; requires administrator approval. Scanned-page OCR is opt-in, page-cited, and flagged for original-document verification.', 'Cell')],
-    [P('Measure and improve review accuracy', 'CellBold'), P('PLANNED', 'Status'), P('The current charts report review activity and content status. Dante does not yet have a human-labeled evaluation set or false-positive / missed-conflict metrics.', 'Cell')],
+    [P('ROUND 2 COMMITMENT', 'CellBold'), P('STATUS', 'CellBold'), P('WHAT WORKS NOW / LIMITS', 'CellBold')],
+    [P('Connect content sources', 'CellBold'), P('PARTIAL', 'Status'), P('Scheduled public-page text checks; reviewer-approved baseline and change review. Generic reviewer-gated webhook. Native CMS/OAuth connectors are still future work.', 'Cell')],
+    [P('Bring in team guidance', 'CellBold'), P('IMPLEMENTED', 'Status'), P('PDF/DOCX extraction with page or paragraph references, opt-in scanned-PDF OCR, and administrator approval before activation.', 'Cell')],
+    [P('Support team review', 'CellBold'), P('PARTIAL', 'Status'), P('Shared workspaces, roles, reviewer assignments, and an assigned-first in-app queue. No email/push notifications or configurable multi-stage approvals.', 'Cell')],
+    [P('Measure review quality', 'CellBold'), P('PARTIAL', 'Status'), P('Curated fact-check baseline plus reviewer-labeled examples; confusion matrix, precision, recall, false alarms, and missed review flags. Small-set evaluation; no automatic tuning.', 'Cell')],
+    [P('Broaden coverage', 'CellBold'), P('PARTIAL', 'Status'), P('Multilingual rule assistance and opt-in image/logo review route uncertainty to people. Coverage is limited; visual contrast is advisory, not WCAG measured.', 'Cell')],
 ]
-story += [clean_table(status_rows, [40 * mm, 32 * mm, 98 * mm], padd=5)]
-story += [Spacer(1, 5 * mm), P('Improvements delivered in the current build', 'Subsection')]
+story += [clean_table(status_rows, [38 * mm, 27 * mm, 105 * mm], padd=3)]
+story += [Spacer(1, 3 * mm), P('Round 3 work delivered', 'Subsection')]
 improvements = [
-    [P('Shared, authenticated workspaces', 'CellBold'), P('Supabase-backed state, roles, invitations, and private source storage.', 'Cell')],
-    [P('Document and visual review', 'CellBold'), P('PDF/DOCX rule intake, consent-controlled OCR, image text review, and approved-logo reference comparison.', 'Cell')],
-    [P('Review operations', 'CellBold'), P('Campaign/channel/team analytics, audit export, and a human-gated publishing webhook.', 'Cell')],
-    [P('Safer language checks', 'CellBold'), P('Validated language tags and evidence quotes preserved in their original scripts; uncertain results remain for human review.', 'Cell')],
-    [P('Loophole fixes', 'CellBold'), P('Persistent-workspace reset is blocked. Logo review now requires a valid approved image reference when selected.', 'Cell')],
+    [P('Scheduled sources', 'CellBold'), P('Configured intervals, guarded Vercel cron, page-change evidence, and human approval gates.', 'Cell')],
+    [P('Team workflow', 'CellBold'), P('Reviewer assignments, assigned-first queue, role checks, audit entries, and duplicate-action protection.', 'Cell')],
+    [P('Measured quality', 'CellBold'), P('Reviewer labels now feed a confusion matrix and transparent precision/recall and error counts.', 'Cell')],
+    [P('Guidance and coverage', 'CellBold'), P('Traceable PDF/DOCX/OCR intake, language-aware rule review, and consented image/logo checks.', 'Cell')],
+    [P('Reliability fixes', 'CellBold'), P('Persistent-workspace reset is blocked; reviewer-only source monitoring and schedule endpoint guards are enforced.', 'Cell')],
 ]
-story += [clean_table([[P('IMPROVEMENT', 'CellBold'), P('DELIVERED', 'CellBold')]] + improvements, [49 * mm, 121 * mm], padd=4)]
+story += [clean_table([[P('IMPROVEMENT', 'CellBold'), P('DELIVERED', 'CellBold')]] + improvements, [43 * mm, 127 * mm], padd=3)]
 story += [Spacer(1, 3 * mm)]
 story += [PageBreak()]
 
@@ -364,7 +366,7 @@ stack = [
     [P('Data and identity', 'Cell'), P('Supabase Auth and PostgreSQL', 'Cell'), P('Workspace membership, sources, content, audit history, and saved state.', 'Cell')],
     [P('Files', 'Cell'), P('Supabase private Storage', 'Cell'), P('Original policy and logo files; admin-only short-lived document links.', 'Cell')],
     [P('AI', 'Cell'), P('Gemini GenerateContent REST API', 'Cell'), P('Opt-in structured OCR / semantic assistance; exact quotes are checked by the server.', 'Cell')],
-    [P('Charts and deployment', 'Cell'), P('Recharts; Vercel', 'Cell'), P('Workspace analytics and target hosting. Actual deployment state must be smoke-tested.', 'Cell')],
+    [P('Charts and deployment', 'Cell'), P('Recharts; Vercel Cron', 'Cell'), P('Workspace activity charts, evaluation measures, and scheduled page checks. Hosted cron and deployment still require production smoke testing.', 'Cell')],
 ]
 story += [clean_table(stack, [34 * mm, 61 * mm, 75 * mm], padd=4)]
 story += [Spacer(1, 3 * mm), P('Privacy boundary: Supabase and Gemini credentials remain server-side. The browser sends the user session to Dante; files are only forwarded to Gemini when the relevant consent is given.', 'BodySmall')]
@@ -375,7 +377,7 @@ story += [PageBreak()]
 story += section('Testing and reliability', BLUE)
 test_rows = [
     [P('CHECK', 'CellBold'), P('RESULT', 'CellBold'), P('SCOPE', 'CellBold')],
-    [P('Automated feature tests', 'Cell'), P('5 passed, 0 failed', 'CellBold'), P('Exact fact conflict and evidence; OCR consent gate; OCR candidate citation and pending state; private original access by role; cross-language exact quotes; persistent reset protection.', 'Cell')],
+    [P('Automated feature tests', 'Cell'), P('8 passed, 0 failed', 'CellBold'), P('Evidence and OCR gates; private originals; multilingual quote validation; reset protection; idempotent reviewer assignment; evaluation labels and metrics; monitor role and scheduled-job guards.', 'Cell')],
     [P('Production build', 'Cell'), P('Passed', 'CellBold'), P('Next.js compile, TypeScript phase, static route generation, and API route generation completed locally.', 'Cell')],
 ]
 story += [clean_table(test_rows, [37 * mm, 31 * mm, 102 * mm], padd=5)]
@@ -385,8 +387,9 @@ story += [P('Test limits', 'Subsection')]
 limits = [
     'Gemini is mocked in the automated tests. They verify request gating, parsing, evidence validation, and state transitions, but do not measure live-model accuracy.',
     'The OCR test uses a synthetic PDF with no text layer and a mocked transcript. A photographed/scanned guideline has not been evaluated against live Gemini OCR.',
-    'No human-labeled accuracy set, precision/recall report, load test, native CMS integration test, scheduled-monitor test, or production Vercel smoke test has been completed.',
-    'The page monitor reads server-delivered HTML on demand. JavaScript-rendered pages and scheduled polling are outside the current prototype.',
+    'The accuracy lab ships with a small curated numeric baseline. Workspace labels are supported, but no real pilot labels have been entered; these metrics are not a claim of real-world accuracy.',
+    'Automated tests cover role gates and safe empty cron runs, not a full Vercel cron cycle, external website changes, native CMS integration, load, or production smoke testing.',
+    'The monitor reads server-delivered HTML; JavaScript-rendered pages may be missed. Scheduled runs require CRON_SECRET and a configured Supabase service key in the hosted environment.',
 ]
 for item in limits:
     story.append(P('- ' + plain(item), 'BodyX'))
@@ -399,10 +402,10 @@ story += section('Product roadmap and future development', GREEN)
 roadmap = [
     [P('NEXT', 'CellBold'), P('MEASURABLE OUTCOME', 'CellBold')],
     [P('Deploy and smoke-test the final build', 'CellBold'), P('Verify Supabase environment keys, OCR consent, PDF upload, role checks, original-file access, and the reviewer-gated webhook in the hosted environment.', 'Cell')],
-    [P('Build an accuracy evaluation set', 'CellBold'), P('Label aligned, conflicting, and uncertain examples by language and channel; report precision, recall, false positives, and missed conflicts before tuning.', 'Cell')],
-    [P('Connect real publishing systems', 'CellBold'), P('Add one CMS integration with scoped permissions, scheduled change checks, idempotent sync, and reviewer approval before guidance changes.', 'Cell')],
+    [P('Grow and validate the accuracy set', 'CellBold'), P('Collect human-reviewed examples across languages and channels; report error rates with sample size, then tune only after independent validation.', 'Cell')],
+    [P('Add native source connectors', 'CellBold'), P('Integrate a CMS with scoped permissions, scheduled sync, idempotent updates, and a review step before approved guidance changes.', 'Cell')],
     [P('Improve multilingual and visual quality', 'CellBold'), P('Expand verified language coverage; compare OCR and semantic findings with human judgments; add measured contrast checks where technically reliable.', 'Cell')],
-    [P('Scale team governance', 'CellBold'), P('Add reviewer assignments and notifications, configurable approval stages, retention controls, and richer audit exports.', 'Cell')],
+    [P('Extend team governance', 'CellBold'), P('Add email/push notifications, configurable approval stages, retention controls, and richer audit exports.', 'Cell')],
     [P('Surface recurring issues', 'CellBold'), P('Group repeated findings and overrides with examples, then compare the patterns against labeled review outcomes.', 'Cell')],
 ]
 story += [clean_table(roadmap, [60 * mm, 110 * mm], padd=5)]

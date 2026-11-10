@@ -149,3 +149,61 @@ test('persistent workspace reset is blocked even for an admin', async () => {
   const result = await apiRequest('/api/reset', { adapter, body: {} });
   assert.equal(result.status, 409);
 });
+
+test('review assignment only accepts active reviewer or admin workspace members', async () => {
+  const state = seedState();
+  state.content[0].status = 'needs_review';
+  state.content[0].finding = { type: 'Fact conflict' };
+  const adapter = makeAdapter(state);
+  adapter.members = [
+    { user_id: 'reviewer-1', email: 'reviewer@example.org', role: 'reviewer' },
+    { user_id: 'creator-1', email: 'creator@example.org', role: 'creator' }
+  ];
+  const assigned = await apiRequest('/api/content/assign', { adapter, body: { contentId: state.content[0].id, userId: 'reviewer-1' } });
+  assert.equal(assigned.status, 200);
+  assert.equal(assigned.body.content[0].assignedReviewerEmail, 'reviewer@example.org');
+  const auditCount = assigned.body.audit.length;
+  const duplicate = await apiRequest('/api/content/assign', { adapter, body: { contentId: state.content[0].id, userId: 'reviewer-1' } });
+  assert.equal(duplicate.status, 200);
+  assert.equal(duplicate.body.audit.length, auditCount);
+  const rejected = await apiRequest('/api/content/assign', { adapter, body: { contentId: state.content[0].id, userId: 'creator-1' } });
+  assert.equal(rejected.status, 400);
+  const cleared = await apiRequest('/api/content/assign', { adapter, body: { contentId: state.content[0].id, userId: '' } });
+  assert.equal(cleared.status, 200);
+  assert.equal(cleared.body.content[0].assignedReviewerId, undefined);
+});
+
+test('review evaluation accepts workspace labels and reports false positive and miss counts', async () => {
+  const adapter = makeAdapter();
+  const saved = await apiRequest('/api/evaluation/label', { adapter, body: {
+    sourceId: 'pro-storage', text: 'Pro plan includes 250 GB of storage.', expected: 'conflict'
+  } });
+  assert.equal(saved.status, 201);
+  assert.equal(saved.body.evaluationCases[0].expected, 'conflict');
+  const summary = await apiRequest('/api/evaluation/summary', { adapter, method: 'GET' });
+  assert.equal(summary.status, 200);
+  assert.equal(summary.body.savedLabels, 1);
+  assert.equal(summary.body.cases, 11);
+  assert.equal(summary.body.missedReviewFlags, 2);
+  assert.ok(summary.body.matrix.conflict);
+  const reviewer = makeAdapter(seedState(), 'reviewer');
+  const denied = await apiRequest('/api/evaluation/label', { adapter: reviewer, body: {
+    sourceId: 'pro-storage', text: 'Pro plan includes 250 GB of storage.', expected: 'conflict'
+  } });
+  assert.equal(denied.status, 403);
+});
+
+test('only reviewers can create monitors and scheduled jobs require a persistent service adapter', async () => {
+  const creator = makeAdapter(seedState(), 'creator');
+  const deniedCreate = await apiRequest('/api/monitors/create', { adapter: creator, body: { title: 'Pricing', url: 'https://example.com', sourceId: 'pro-storage' } });
+  assert.equal(deniedCreate.status, 403);
+  const localAdmin = makeAdapter(seedState(), 'admin');
+  const deniedCron = await apiRequest('/api/monitors/check-due', { adapter: localAdmin, body: {} });
+  assert.equal(deniedCron.status, 403);
+  const scheduledAdapter = makeAdapter(seedState(), 'admin');
+  scheduledAdapter.cron = true;
+  scheduledAdapter.service = {};
+  const emptyRun = await apiRequest('/api/monitors/check-due', { adapter: scheduledAdapter, body: {} });
+  assert.equal(emptyRun.status, 200);
+  assert.deepEqual(emptyRun.body, { checked: 0, results: [] });
+});
