@@ -319,7 +319,14 @@ function renderDocumentsAndImages() {
   if(standalone) return;
   const role=appState.workspaceAccess?.role||'admin';
   const docs = $('#document-review-list');
-  if (docs) docs.innerHTML = (appState.documents || []).map(doc => `<article class="feature-record"><div><b>${escapeHtml(doc.name)}</b><small>${escapeHtml(doc.status)} · ${doc.pageCount} pages/paragraphs · ${escapeHtml(doc.language || 'en')}</small>${doc.extractionWarnings?.map(w => `<p>${escapeHtml(w)}</p>`).join('') || ''}</div>${doc.status === 'pending_review' ? `<div class="candidate-list">${doc.candidates.map(candidate => `<label><input type="checkbox" data-doc-candidate="${escapeHtml(doc.id)}" value="${escapeHtml(candidate.id)}"><span><q>${escapeHtml(candidate.quote)}</q><small>${candidate.pageNumber ? `Page ${candidate.pageNumber}` : `Paragraph ${candidate.paragraphNumber}`}</small></span></label>`).join('') || '<p>No likely rules found.</p>'}</div>${role==='admin'?`<button class="small-action primary" data-document-approve="${escapeHtml(doc.id)}">Approve selected statements</button>`:'<p class="review-waiting-note">An administrator must approve selected statements.</p>'}` : `<span class="status-pill status-approved">Approved</span>`}</article>`).join('') || '<div class="empty-panel">No policy documents imported yet.</div>';
+  if (docs) docs.innerHTML = (appState.documents || []).map(doc => {
+    const openOriginal = role === 'admin' && doc.storagePath ? `<button class="small-action" data-document-open="${escapeHtml(doc.id)}">Open original PDF/DOCX</button>` : '';
+    const warnings = doc.extractionWarnings?.map(w => `<p>${escapeHtml(w)}</p>`).join('') || '';
+    const candidates = doc.status === 'pending_review'
+      ? `<div class="candidate-list">${(doc.candidates || []).map(candidate => `<label><input type="checkbox" data-doc-candidate="${escapeHtml(doc.id)}" value="${escapeHtml(candidate.id)}"><span><q>${escapeHtml(candidate.quote)}</q><small>${candidate.pageNumber ? `Page ${candidate.pageNumber}` : `Paragraph ${candidate.paragraphNumber}`}</small></span></label>`).join('') || '<p>No likely rules found.</p>'}</div>${role === 'admin' ? `<button class="small-action primary" data-document-approve="${escapeHtml(doc.id)}">Approve selected statements</button>` : '<p class="review-waiting-note">An administrator must approve selected statements.</p>'}`
+      : '<span class="status-pill status-approved">Approved</span>';
+    return `<article class="feature-record"><div><b>${escapeHtml(doc.name)}</b><small>${escapeHtml(doc.status)} · ${doc.pageCount} pages/paragraphs · ${escapeHtml(doc.language || 'en')}</small>${warnings}${openOriginal}</div>${candidates}</article>`;
+  }).join('') || '<div class="empty-panel">No policy documents imported yet.</div>';
   const images = $('#image-review-list');
   if (images) images.innerHTML = (appState.imageReviews || []).map(item => `<article class="feature-record"><b>${escapeHtml(item.name)}</b><small>${fmtDate(item.reviewedAt)} · Gemini visual advisory · ${escapeHtml(item.reviewedBy)}</small><p><b>Logo:</b> ${escapeHtml(item.result.logoAssessment || 'No assessment')}</p><div><b>Detected text</b>${item.result.visibleText?.map(row => `<p><q>${escapeHtml(row.text)}</q> <small>${escapeHtml(row.location)}</small></p>`).join('') || '<p>No visible copy detected.</p>'}</div><div><b>Contrast warnings</b>${item.result.contrastWarnings?.map(row => `<p>${escapeHtml(row.severity)}: ${escapeHtml(row.text)} — ${escapeHtml(row.reason)}</p>`).join('') || '<p>No likely contrast issue flagged.</p>'}</div>${item.result.limitations?.length ? `<small>Limitations: ${escapeHtml(item.result.limitations.join('; '))}</small>` : ''}</article>`).join('') || '<div class="empty-panel">No campaign images reviewed yet.</div>';
   const logoSelect=$('#image-logo-source'); if(logoSelect){const previous=logoSelect.value;const logos=(appState.sources||[]).filter(row=>row.kind==='asset'&&row.status==='approved');logoSelect.innerHTML='<option value="">No logo reference</option>'+logos.map(row=>`<option value="${escapeHtml(row.id)}">${escapeHtml(row.title)}</option>`).join('');if(logos.some(row=>row.id===previous))logoSelect.value=previous;}
@@ -367,6 +374,8 @@ function renderPreview(preview) {
 
 function render() {
   if (!appState) return;
+  const resetButton = $('#reset-demo');
+  if (resetButton) resetButton.classList.toggle('hidden', Boolean(appState.workspaceAccess?.workspaceId));
   renderStats(); renderTrendChart(); renderStatusAndFacts(); renderIntegrationStatus(); renderReviewQueue(); renderSourceLibrary(); renderAudit(); renderDocumentsAndImages();
   renderContentTable('#content-table-body'); renderContentTable('#content-table-full');
   const dateText = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date()).toUpperCase();
@@ -404,6 +413,17 @@ document.addEventListener('click', async event => {
   try {
     if (event.target.closest('#audit-export-csv')) { downloadAudit('csv'); return; }
     if (event.target.closest('#audit-export-json')) { downloadAudit('json'); return; }
+    const openDocument = event.target.closest('[data-document-open]');
+    if (openDocument) {
+      const preview = window.open('about:blank', '_blank');
+      if (preview) preview.opener = null;
+      try {
+        const result = await api('/api/documents/open-original', { documentId: openDocument.dataset.documentOpen });
+        if (preview) preview.location.replace(result.url);
+        else showToast('Allow pop-ups to open the private original document.');
+      } catch (error) { preview?.close(); showToast(error.message); }
+      return;
+    }
     const approveDocument = event.target.closest('[data-document-approve]');
     if (approveDocument) {
       const selected = $$(`[data-doc-candidate="${CSS.escape(approveDocument.dataset.documentApprove)}"]:checked`).map(input => input.value);
@@ -426,7 +446,9 @@ document.addEventListener('click', async event => {
     if (event.target.closest('#preview-approve')) { await approveSourceChange(); return; }
     if (event.target.id === 'impact-preview-modal') { event.target.classList.add('hidden'); return; }
     if (event.target.closest('#reset-demo')) {
-      appState = await api('/api/reset', {}); render(); showView('overview'); showToast('Demo scenario reset to the approved 100 GB fact.'); return;
+      try { appState = await api('/api/reset', {}); render(); showView('overview'); showToast('Demo scenario reset to the approved 100 GB fact.'); }
+      catch (error) { showToast(error.message); }
+      return;
     }
     const monitorCheck = event.target.closest('[data-monitor-check]');
     if (monitorCheck) { monitorCheck.disabled = true; appState = await api('/api/monitors/check', { monitorId: monitorCheck.dataset.monitorCheck }); render(); showToast('Page check complete.'); return; }
@@ -474,12 +496,12 @@ document.addEventListener('submit', async event => {
   }
   if (event.target.id === 'document-upload-form') {
     event.preventDefault(); const form = new FormData(event.target); const file = form.get('file');
-    try { const data = await fileToBase64(file); appState = await api('/api/documents/ingest', { name:file.name, data, language:form.get('language') || 'en' }); render(); event.target.reset(); showToast('Document extracted. Select and approve rules below.'); }
+    try { const data = await fileToBase64(file); appState = await api('/api/documents/ingest', { name:file.name, data, language:form.get('language') || 'en', ocrConsent:form.get('ocrConsent') === 'on' }); render(); event.target.reset(); showToast('Document extracted. Verify every OCR-assisted quote against the original before approval.'); }
     catch (error) { showToast(error.message); }
   }
   if (event.target.id === 'image-review-form') {
     event.preventDefault(); const form = new FormData(event.target); const file = form.get('file');
-    try { const data = await fileToBase64(file); appState = await api('/api/images/review', { name:file.name, data, mimeType:file.type, context:form.get('context'), aiConsent:form.get('aiConsent') === 'on' }); render(); event.target.reset(); showToast('Visual review saved. Verify the advisory findings manually.'); }
+    try { const data = await fileToBase64(file); appState = await api('/api/images/review', { name:file.name, data, mimeType:file.type, logoSourceId:form.get('logoSourceId') || undefined, context:form.get('context'), aiConsent:form.get('aiConsent') === 'on' }); render(); event.target.reset(); showToast('Visual review saved. Verify the advisory findings manually.'); }
     catch (error) { showToast(error.message); }
   }
   if (event.target.id === 'source-update-form') {
