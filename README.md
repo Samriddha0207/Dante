@@ -80,13 +80,6 @@ For a new Supabase project:
 
 The Supabase URL, publishable key, and secret key must all belong to the same project. Without the database scripts or server secret, the app shows a workspace setup error after sign-in.
 
-## Deploy to Vercel
-
-Import [Samriddha0207/Dante](https://github.com/Samriddha0207/Dante) in Vercel and use the repository root. Vercel detects Next.js automatically. Add the production environment variables from the table above; the authenticated workspace requires the three Supabase variables. Add Gemini and webhook encryption only when those features are needed. After changing environment variables, create a new deployment so the deployment receives them.
-
-For the public landing deployment, use the same repository with `DANTE_SUBMISSION_LANDING=1`; the public landing does not use the authenticated workspace for its embedded sample interaction. Keep the normal `dante` deployment without that flag for the full Supabase-backed app.
-
-Add both local and production redirect URLs in Supabase Auth when you use both environments. Keep service and AI keys in Vercel's server-side environment variables; do not prefix them with `NEXT_PUBLIC_`.
 
 ## What the product includes
 
