@@ -1,41 +1,45 @@
 # Dante
 
-Dante is a brand-guidance and content-review prototype. It links approved source facts to content, flags claims that need attention, and keeps evidence alongside reviewer decisions.
+Dante keeps approved brand guidance connected to the content that uses it. It checks claims, routes uncertain or conflicting copy to a person, and records the evidence and decision.
 
 ## Run locally
 
-Requires Node.js 20.9 or later.
+Use Node.js 22.13 or newer (or Node.js 24), because the PDF parser requires it.
 
 ```powershell
 npm install
 npm run dev
 ```
 
-Open <http://localhost:3000>.
+Open <http://localhost:3000>. Copy `.env.example` to `.env.local`. Set the Supabase URL and publishable key for sign-in and shared workspaces. Add the server-only keys below as needed. Never put the Supabase service role key or webhook encryption key in a `NEXT_PUBLIC_` variable or commit `.env.local`.
 
-Copy `.env.example` to `.env.local` and set the Supabase URL, publishable key, and Gemini API key. The Gemini key is only used server-side; submitted draft text is sent to Gemini only when the reviewer opts in.
+## Supabase and deployment setup
 
-## Supabase setup
+Run `supabase/schema.sql` and then `supabase/round3_migration.sql` in the Supabase SQL Editor. The second migration upgrades the prototype state table to shared workspaces, adds member roles and one-use invitations, and creates private upload storage. Existing per-user workspaces are migrated as their own admin-owned workspaces.
 
-Run the `dante_workspace_state` table and row-level security policy from `supabase/schema.sql` in the Supabase SQL Editor. The Next.js API validates each signed-in Supabase user and stores the current prototype state in one JSONB row per user, protected by RLS. The larger normalized schema in the same file is the planned next migration; shared multi-member workspaces are not implemented yet.
-
-## Deployment
-
-Vercel detects the Next.js app. Add these project environment variables before deployment:
+Set these Vercel environment variables and redeploy:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-- `GEMINI_API_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` (server only; required for shared state, member management, and private uploads)
+- `GEMINI_API_KEY` (server only; optional, enables Gemini assistance after per-submission consent)
 - `GEMINI_MODEL` (optional; defaults to `gemini-3.6-flash`)
+- `DANTE_INTEGRATION_ENCRYPTION_KEY` (server only; 32-byte hex key, required to save webhook credentials)
+- `NEXT_PUBLIC_APP_URL` (optional; used when creating invitation links)
 
-After deployment, add the Vercel production URL to Supabase Auth's allowed redirect URLs.
+Generate an encryption key locally with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`; add the output only in Vercel's server environment settings. Set the Supabase Auth Site URL and redirect allowlist to the deployed app URL. If either migration or the service role key is missing, the authenticated workspace shows a setup error rather than silently falling back to local data.
 
-The dashboard's Recharts show daily review activity, content disposition, and content volume by channel from the saved workspace state.
+## Implemented workflows
 
-## Public webpage monitoring (prototype)
+- **Source library:** submit facts, rules, required terms, logo assets, and language-tagged guidance. Changes require reviewer approval and retain versions.
+- **Content review:** link a draft to an approved source; run deterministic quantity and exact-term checks; optionally send brand rules and the draft to Gemini for evidence-linked semantic assistance. Gemini's output is checked for exact quotes and never makes the final decision.
+- **PDF/DOCX policy intake:** extract text from up to 100 PDF pages or a DOCX under 8 MB. Likely rule sentences retain page or paragraph citations. An administrator selects which candidates become approved rules. Scanned PDFs need OCR before they can be used.
+- **Image review:** upload PNG, JPEG, or WebP under 4 MB; opt in to sending it to Gemini for text transcription and advisory logo/contrast findings. Logo references are private uploads and new versions wait for administrator approval. Contrast findings are visual estimates, not measured WCAG contrast ratios.
+- **Drift analytics:** Recharts summarize saved review events by date, campaign, channel, submitter, and content status. These are workspace data, not external benchmark figures.
+- **Publishing gate:** configure an HTTPS webhook for a CMS or automation endpoint. A reviewer must authorize current content before Dante dispatches it; webhook secrets are encrypted at rest and requests are DNS-validated, pinned, and idempotency-keyed. This is a generic webhook contract, not a built-in connector for a specific CMS. The receiving endpoint must understand Dante's `dante.content.approved` JSON event.
+- **Workspace access:** admins invite email-bound users through seven-day links and assign admin, reviewer, or creator roles. Server routes enforce the permissions; creators submit and view, reviewers decide, and admins manage members and source assets.
+- **Audit:** export the workspace event history to JSON or CSV. Exports include actor, action, time, and related content/source IDs.
 
-In the authenticated app, the Approved sources view can capture a public HTTPS webpage for reviewer approval, check it again on demand, and show multiple changed text blocks. The first snapshot is not a baseline until a reviewer approves it. If the reviewer routes a change to linked content review, the monitor stays pending and does not accept the new baseline until all linked review items are resolved. The fetcher rejects non-HTTPS and private addresses, validates each redirect target, pins every HTTPS connection to a DNS-validated public IP, applies a timeout, and caps response size. Checks read server-delivered HTML, so client-rendered content may be missed. Scheduled crawling, CMS integrations, and document ingestion are not implemented yet. The public no-login sample workspace does not support server-side webpage fetches.
+## Data and limits
 
-## Public no-login demo
-
-Keep `dante-blue` as the authenticated, Supabase-backed app. The separate `dante-submission` Vercel project serves the interactive workspace directly from `dante-submission-site/` without a login screen. Its standalone mode uses sample data and saves changes in that visitor's browser only; Gemini and shared database writes are disabled. To refresh that deployment, upload the contents of `dante-submission-site/` to the existing `dante-submission` Vercel project.
+The interactive app persists workspace state in Supabase Postgres. Original policy and logo files use the private `dante-sources` Storage bucket. The app does not auto-publish or auto-approve guidance. The page monitor reads server-delivered HTML on demand; client-rendered text and scheduled checks are not supported. Gemini image and text analysis is advisory and is sent to Google only after explicit consent. The unauthenticated `dante-submission-site/` remains a separate, sample-data demonstration and does not write to the Supabase workspace.

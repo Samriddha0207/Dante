@@ -12,6 +12,7 @@ if (window.parent !== window) {
       if (event.origin !== window.location.origin || event.data?.type !== 'dante-auth-session') return;
       if (event.data.accessToken) sessionStorage.setItem('dante-access-token', event.data.accessToken);
       else sessionStorage.removeItem('dante-access-token');
+      if(event.data.workspaceId) sessionStorage.setItem('dante-workspace-id',event.data.workspaceId);
       window.removeEventListener('message', receiveSession);
       resolve();
     };
@@ -48,6 +49,7 @@ async function api(url, body) {
   if (body) headers['Content-Type'] = 'application/json';
   const accessToken = sessionStorage.getItem('dante-access-token');
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+  const workspaceId=sessionStorage.getItem('dante-workspace-id'); if(workspaceId) headers['x-dante-workspace']=workspaceId;
   const response = await fetch(url, body ? {
     method: 'POST', headers, body: JSON.stringify(body)
   } : { cache: 'no-store', headers });
@@ -183,7 +185,8 @@ function findingCard(item) {
   const monitorNotices = (finding.monitorChangeNotices || []).map(notice => `<div class="monitor-review-notice"><b>Page change: ${escapeHtml(notice.title)}</b><p>${escapeHtml(notice.note || '')}</p>${notice.excerpt ? `<small>New page text: ${escapeHtml(notice.excerpt)}</small>` : ''}</div>`).join('');
   const aiSummary = finding.aiVerdict ? `<div class="ai-result"><b>Gemini assist: ${escapeHtml(finding.aiVerdict)}</b> · Advisory only; reviewer decides.</div>` : '';
   const suggestion = finding.suggestedFix ? `<div class="finding-suggestion"><b>Possible edit</b><br>${escapeHtml(finding.suggestedFix)}</div>` : '';
-  const actions = item.status === 'needs_review' ? `<div class="finding-evidence">${escapeHtml(finding.evidenceText || '')}</div><div class="finding-source"><span class="source-chip">SOURCE v${escapeHtml(finding.sourceVersion || '')}</span>${escapeHtml(finding.sourceTitle || 'Approved source')} ${finding.newValue ? `· ${escapeHtml(finding.newValue)} ${escapeHtml(finding.newUnit || '')}` : ''}</div>${sourceEvidence}${monitorNotices}${aiSummary}${suggestion}<details class="revision-editor"><summary>Review or edit the proposed content</summary><textarea class="revised-content" rows="3" aria-label="Revised content for ${escapeHtml(item.title)}">${escapeHtml(revisedText)}</textarea><small>The saved revision is checked again against the current approved source.</small></details><textarea class="resolution-note" rows="2" placeholder="Reviewer note (required for exceptions or a manual rule decision)" aria-label="Decision note for ${escapeHtml(item.title)}"></textarea><div class="queue-actions"><button class="small-action primary" data-resolve="revise" data-content-id="${escapeHtml(item.id)}">Save revision and verify</button><button class="small-action" data-resolve="exception" data-content-id="${escapeHtml(item.id)}">Approve exception</button></div>` : `<div class="finding-evidence">${escapeHtml(finding.resolutionNote || '')}</div>${monitorNotices}`;
+  const canReview=['admin','reviewer'].includes(appState.workspaceAccess?.role||'admin');
+  const actions = item.status === 'needs_review' ? `<div class="finding-evidence">${escapeHtml(finding.evidenceText || '')}</div><div class="finding-source"><span class="source-chip">SOURCE v${escapeHtml(finding.sourceVersion || '')}</span>${escapeHtml(finding.sourceTitle || 'Approved source')} ${finding.newValue ? `· ${escapeHtml(finding.newValue)} ${escapeHtml(finding.newUnit || '')}` : ''}</div>${sourceEvidence}${monitorNotices}${aiSummary}${suggestion}${canReview?`<details class="revision-editor"><summary>Review or edit the proposed content</summary><textarea class="revised-content" rows="3" aria-label="Revised content for ${escapeHtml(item.title)}">${escapeHtml(revisedText)}</textarea><small>The saved revision is checked again against the current approved source.</small></details><textarea class="resolution-note" rows="2" placeholder="Reviewer note (required for exceptions or a manual rule decision)" aria-label="Decision note for ${escapeHtml(item.title)}"></textarea><div class="queue-actions"><button class="small-action primary" data-resolve="revise" data-content-id="${escapeHtml(item.id)}">Save revision and verify</button><button class="small-action" data-resolve="exception" data-content-id="${escapeHtml(item.id)}">Approve exception</button></div>`:'<p class="review-waiting-note">Awaiting a workspace reviewer decision.</p>'}` : `<div class="finding-evidence">${escapeHtml(finding.resolutionNote || '')}</div>${monitorNotices}`;
   const priority = finding.priority || 'Standard';
   return `<article class="queue-item"><div class="queue-top"><span class="issue-pill">${escapeHtml(finding.type || 'Needs review')}</span><span class="priority-pill ${priority === 'High priority' ? 'priority-high' : priority === 'Review soon' ? 'priority-medium' : ''}">${escapeHtml(priority)}</span><span class="review-age">${fmtDate(finding.createdAt || item.reviewedAt)}</span></div><h4>${escapeHtml(item.title)}</h4><div class="quote-box">${excerpt}</div>${actions}</article>`;
 }
@@ -210,7 +213,7 @@ function renderSourceLibrary() {
   $('#version-history').innerHTML = history.map((entry, index) => `<div class="version-row"><span class="version-badge">v${entry.version}</span><div><b>${entry.value} ${escapeHtml(entry.unit)}</b><small>${index === 0 ? 'Current approved fact' : 'Previous approved fact'}</small></div><time>${fmtDate(entry.approvedAt)}</time></div>`).join('');
   const sourceSelect = $('#content-source');
   const chosen = sourceSelect?.value;
-  const approved = appState.sources.filter(item => item.status === 'approved');
+  const approved = appState.sources.filter(item => item.status === 'approved' && item.kind !== 'asset');
   if (sourceSelect) {
     sourceSelect.innerHTML = approved.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.title)} · ${escapeHtml(item.category || item.kind)}</option>`).join('');
     if (approved.some(item => item.id === chosen)) sourceSelect.value = chosen;
@@ -221,7 +224,7 @@ function renderSourceLibrary() {
   const matches = item => `${item.title} ${item.category || ''} ${item.guidance || ''} ${item.value || ''} ${item.unit || ''}`.toLocaleLowerCase().includes(query);
   $('#source-library-list').classList.toggle('hidden', Boolean(query) && !matches(source));
   const matchingSources = appState.sources.filter(item => item.id !== 'pro-storage' && matches(item));
-  if (extra) extra.innerHTML = matchingSources.map(item => `<article class="additional-source"><div><span class="source-chip">${escapeHtml(item.category || item.kind)}</span><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.guidance || '')}</p><small>${item.status === 'pending' ? 'Pending approval' : `Approved · version ${item.version}`}</small></div>${item.status === 'pending' ? `<button class="small-action primary" data-approve-source="${escapeHtml(item.id)}">Approve source</button>` : '<span class="status-pill status-approved"><span></span>Approved</span>'}</article>`).join('') || (query && !matches(source) ? '<div class="empty-panel">No approved source matches this search.</div>' : '');
+  if (extra) extra.innerHTML = matchingSources.map(item => `<article class="additional-source"><div><span class="source-chip">${escapeHtml(item.category || item.kind)}</span><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.guidance || '')}</p><small>${item.status === 'pending' ? 'Pending approval' : `Approved · version ${item.version}`}</small></div>${item.pendingAsset&&appState.workspaceAccess?.role==='admin'?`<button class="small-action primary" data-approve-logo-update="${escapeHtml(item.id)}">Approve logo v${Number(item.version||1)+1}</button>`:item.status === 'pending' && ['admin','reviewer'].includes(appState.workspaceAccess?.role||'admin') ? `<button class="small-action primary" data-approve-source="${escapeHtml(item.id)}">Approve source</button>` : item.status === 'pending' ? '<span class="status-pill status-review">Pending approval</span>' : '<span class="status-pill status-approved"><span></span>Approved</span>'}</article>`).join('') || (query && !matches(source) ? '<div class="empty-panel">No approved source matches this search.</div>' : '');
 }
 
 function renderPageMonitors() {
@@ -232,7 +235,7 @@ function renderPageMonitors() {
   if (standalone) return;
   const select = $('#monitor-source');
   const selected = select.value;
-  const approved = (appState.sources || []).filter(item => item.status === 'approved');
+  const approved = (appState.sources || []).filter(item => item.status === 'approved' && item.kind !== 'asset');
   select.innerHTML = approved.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.title)} · ${escapeHtml(item.category || item.kind)}</option>`).join('');
   if (approved.some(item => item.id === selected)) select.value = selected;
   const list = $('#page-monitor-list');
@@ -310,6 +313,37 @@ function renderAudit() {
   }).join('') : '<div class="empty-panel">No changes recorded yet.</div>';
 }
 
+function renderDocumentsAndImages() {
+  const standalone=Boolean(window.DanteDemo?.standalone);
+  ['document-panel','image-review-panel','workspace-panel','publishing-panel'].forEach(id=>document.getElementById(id)?.classList.toggle('hidden',standalone));
+  if(standalone) return;
+  const role=appState.workspaceAccess?.role||'admin';
+  const docs = $('#document-review-list');
+  if (docs) docs.innerHTML = (appState.documents || []).map(doc => `<article class="feature-record"><div><b>${escapeHtml(doc.name)}</b><small>${escapeHtml(doc.status)} · ${doc.pageCount} pages/paragraphs · ${escapeHtml(doc.language || 'en')}</small>${doc.extractionWarnings?.map(w => `<p>${escapeHtml(w)}</p>`).join('') || ''}</div>${doc.status === 'pending_review' ? `<div class="candidate-list">${doc.candidates.map(candidate => `<label><input type="checkbox" data-doc-candidate="${escapeHtml(doc.id)}" value="${escapeHtml(candidate.id)}"><span><q>${escapeHtml(candidate.quote)}</q><small>${candidate.pageNumber ? `Page ${candidate.pageNumber}` : `Paragraph ${candidate.paragraphNumber}`}</small></span></label>`).join('') || '<p>No likely rules found.</p>'}</div>${role==='admin'?`<button class="small-action primary" data-document-approve="${escapeHtml(doc.id)}">Approve selected statements</button>`:'<p class="review-waiting-note">An administrator must approve selected statements.</p>'}` : `<span class="status-pill status-approved">Approved</span>`}</article>`).join('') || '<div class="empty-panel">No policy documents imported yet.</div>';
+  const images = $('#image-review-list');
+  if (images) images.innerHTML = (appState.imageReviews || []).map(item => `<article class="feature-record"><b>${escapeHtml(item.name)}</b><small>${fmtDate(item.reviewedAt)} · Gemini visual advisory · ${escapeHtml(item.reviewedBy)}</small><p><b>Logo:</b> ${escapeHtml(item.result.logoAssessment || 'No assessment')}</p><div><b>Detected text</b>${item.result.visibleText?.map(row => `<p><q>${escapeHtml(row.text)}</q> <small>${escapeHtml(row.location)}</small></p>`).join('') || '<p>No visible copy detected.</p>'}</div><div><b>Contrast warnings</b>${item.result.contrastWarnings?.map(row => `<p>${escapeHtml(row.severity)}: ${escapeHtml(row.text)} — ${escapeHtml(row.reason)}</p>`).join('') || '<p>No likely contrast issue flagged.</p>'}</div>${item.result.limitations?.length ? `<small>Limitations: ${escapeHtml(item.result.limitations.join('; '))}</small>` : ''}</article>`).join('') || '<div class="empty-panel">No campaign images reviewed yet.</div>';
+  const logoSelect=$('#image-logo-source'); if(logoSelect){const previous=logoSelect.value;const logos=(appState.sources||[]).filter(row=>row.kind==='asset'&&row.status==='approved');logoSelect.innerHTML='<option value="">No logo reference</option>'+logos.map(row=>`<option value="${escapeHtml(row.id)}">${escapeHtml(row.title)}</option>`).join('');if(logos.some(row=>row.id===previous))logoSelect.value=previous;}
+  const logoVersionSelect=$('#logo-version-select');if(logoVersionSelect){const previous=logoVersionSelect.value;const logos=(appState.sources||[]).filter(row=>row.kind==='asset'&&row.status==='approved');logoVersionSelect.innerHTML='<option value="">Create new logo reference</option>'+logos.map(row=>`<option value="${escapeHtml(row.id)}">Upload next version · ${escapeHtml(row.title)} v${row.version}</option>`).join('');if(logos.some(row=>row.id===previous))logoVersionSelect.value=previous;}
+  const roleBadge=$('#workspace-role-badge'); if(roleBadge) roleBadge.textContent=`Your role: ${role}`;
+  $('#source-update-form')?.classList.toggle('hidden',!['admin','reviewer'].includes(role));$('#publishing-config-form')?.classList.toggle('hidden',role!=='admin');
+  const workspaceSelect=$('#workspace-selector');if(workspaceSelect){const choices=appState.workspaceChoices||[];const active=appState.workspaceAccess?.workspaceId||sessionStorage.getItem('dante-workspace-id')||'';workspaceSelect.innerHTML=choices.length?choices.map(row=>`<option value="${escapeHtml(row.workspace_id)}">${escapeHtml(row.workspaces?.name||'Dante workspace')}</option>`).join(''):'<option value="">Dante workspace</option>';if(active&&choices.some(row=>row.workspace_id===active))workspaceSelect.value=active;}
+  const memberList=$('#workspace-member-list'); if(memberList) memberList.innerHTML=(appState.workspaceMembers||[]).map(member=>`<article class="feature-record member-row"><div><b>${escapeHtml(member.email||member.user_id)}</b><small>${escapeHtml(member.role)}</small></div>${role==='admin'?`<select data-member-role="${escapeHtml(member.user_id)}"><option value="admin" ${member.role==='admin'?'selected':''}>Admin</option><option value="reviewer" ${member.role==='reviewer'?'selected':''}>Reviewer</option><option value="creator" ${member.role==='creator'?'selected':''}>Creator</option></select>`:''}</article>`).join('')||'<div class="empty-panel">Workspace roles appear after Supabase migration setup.</div>';
+  $('#workspace-invite-form')?.classList.toggle('hidden',role!=='admin'); $('#logo-upload-form')?.classList.toggle('hidden',role!=='admin');
+  const publishing=$('#publishing-content-list'); if(publishing) publishing.innerHTML=`<p class="integration-status">${appState.integrations?.publishing?.url?`Webhook configured · ${escapeHtml(new URL(appState.integrations.publishing.url).hostname)} · reviewer gate active`:'No publishing webhook configured.'}</p>`+(appState.content||[]).filter(row=>row.status==='current').slice(0,12).map(item=>`<article class="feature-record publish-row"><div><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.channel)} · ${escapeHtml(item.campaign||'Unassigned')} · ${item.publishApproval?'Reviewer approved':'Awaiting human approval'}</small></div>${item.publishDispatch?.status==='sent'?'<span class="status-pill status-approved">Sent</span>':!['admin','reviewer'].includes(role)?'<span class="status-pill status-neutral">Reviewer only</span>':item.publishApproval?`<button class="small-action primary" data-publish-send="${escapeHtml(item.id)}">Send to publisher</button>`:`<label>Reviewer note<textarea data-publish-note="${escapeHtml(item.id)}" rows="2" placeholder="Why is this ready to publish? (8+ characters)"></textarea></label><button class="small-action primary" data-publish-approve="${escapeHtml(item.id)}">Authorize publishing</button>`}</article>`).join('');
+}
+
+function downloadAudit(format) {
+  const events = appState.audit || [];
+  let content, type, filename;
+  if (format === 'json') { content = JSON.stringify({ workspace: appState.workspace?.name || 'Dante', exportedAt: new Date().toISOString(), events }, null, 2); type = 'application/json'; filename = 'dante-audit.json'; }
+  else {
+    const columns = ['at','actor','type','details','contentId','sourceId','sourceVersion','action'];
+    const cell = value => { let text = String(value ?? '').replace(/[\r\n]+/g, ' '); if (/^[=+@-]/.test(text)) text = `'${text}`; return `"${text.replace(/"/g, '""')}"`; };
+    content = [columns.map(cell).join(','), ...events.map(row => columns.map(key => cell(row[key])).join(','))].join('\r\n'); type = 'text/csv;charset=utf-8'; filename = 'dante-audit.csv';
+  }
+  const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([content], { type })); link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
 function renderPreview(preview) {
   pendingSourceChange = { sourceId: preview.sourceId, value: preview.proposed, expectedVersion: preview.currentVersion };
   $('#preview-current').textContent = `${preview.current} ${preview.unit}`;
@@ -333,7 +367,7 @@ function renderPreview(preview) {
 
 function render() {
   if (!appState) return;
-  renderStats(); renderTrendChart(); renderStatusAndFacts(); renderIntegrationStatus(); renderReviewQueue(); renderSourceLibrary(); renderAudit();
+  renderStats(); renderTrendChart(); renderStatusAndFacts(); renderIntegrationStatus(); renderReviewQueue(); renderSourceLibrary(); renderAudit(); renderDocumentsAndImages();
   renderContentTable('#content-table-body'); renderContentTable('#content-table-full');
   const dateText = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date()).toUpperCase();
   $('.eyebrow').textContent = dateText;
@@ -368,6 +402,19 @@ document.addEventListener('click', async event => {
   const resolveButton = event.target.closest('[data-resolve]');
   const openReview = event.target.closest('[data-open-review]');
   try {
+    if (event.target.closest('#audit-export-csv')) { downloadAudit('csv'); return; }
+    if (event.target.closest('#audit-export-json')) { downloadAudit('json'); return; }
+    const approveDocument = event.target.closest('[data-document-approve]');
+    if (approveDocument) {
+      const selected = $$(`[data-doc-candidate="${CSS.escape(approveDocument.dataset.documentApprove)}"]:checked`).map(input => input.value);
+      if (!selected.length) { showToast('Select at least one candidate statement.'); return; }
+      appState = await api('/api/documents/approve', { documentId: approveDocument.dataset.documentApprove, candidateIds: selected }); render(); showToast('Selected cited rules are now approved sources.'); return;
+    }
+    const approveLogoVersion=event.target.closest('[data-approve-logo-update]');if(approveLogoVersion){appState=await api('/api/assets/logo/approve-update',{sourceId:approveLogoVersion.dataset.approveLogoUpdate});render();showToast('New logo version approved. Earlier versions remain in the audit history.');return;}
+    const publishApprove=event.target.closest('[data-publish-approve]');
+    if(publishApprove){const id=publishApprove.dataset.publishApprove;const note=$(`[data-publish-note="${CSS.escape(id)}"]`)?.value||'';appState=await api('/api/content/approve-publish',{contentId:id,note});render();showToast('Human publishing approval recorded.');return;}
+    const publishSend=event.target.closest('[data-publish-send]');
+    if(publishSend){appState=await api('/api/content/publish',{contentId:publishSend.dataset.publishSend});render();showToast('Approved content sent to the publishing webhook.');return;}
     if (nav) { event.preventDefault(); showView(nav.dataset.view); return; }
     if (viewLink) { showView(viewLink.dataset.viewLink); return; }
     if (event.target.closest('#simulate-change') || event.target.closest('#impact-update')) {
@@ -413,6 +460,28 @@ document.addEventListener('click', async event => {
 });
 
 document.addEventListener('submit', async event => {
+  if(event.target.id==='logo-upload-form'){
+    event.preventDefault();const form=new FormData(event.target);const file=form.get('file');
+    try{const data=await fileToBase64(file);appState=await api('/api/assets/logo',{sourceId:form.get('sourceId')||undefined,name:file.name,data,mimeType:file.type,guidance:form.get('guidance')});render();event.target.reset();showToast('Logo or new logo version submitted for approval.');}catch(error){showToast(error.message);}
+  }
+  if(event.target.id==='workspace-invite-form'){
+    event.preventDefault();const form=new FormData(event.target);
+    try{const result=await api('/api/workspace/invite',{email:form.get('email'),role:form.get('role')});appState=result.state;render();$('#workspace-invite-result').innerHTML=`<div class="invite-link-result"><b>Invitation link</b><input readonly value="${escapeHtml(result.inviteUrl)}"><small>Share this link with ${escapeHtml(result.email)}. It expires in ${result.expiresInDays} days.</small></div>`;event.target.reset();}catch(error){showToast(error.message);}
+  }
+  if(event.target.id==='publishing-config-form'){
+    event.preventDefault();const form=new FormData(event.target);
+    try{appState=await api('/api/integrations/publishing/configure',{url:form.get('url'),secret:form.get('secret')});render();event.target.reset();showToast('Reviewer-gated webhook saved.');}catch(error){showToast(error.message);}
+  }
+  if (event.target.id === 'document-upload-form') {
+    event.preventDefault(); const form = new FormData(event.target); const file = form.get('file');
+    try { const data = await fileToBase64(file); appState = await api('/api/documents/ingest', { name:file.name, data, language:form.get('language') || 'en' }); render(); event.target.reset(); showToast('Document extracted. Select and approve rules below.'); }
+    catch (error) { showToast(error.message); }
+  }
+  if (event.target.id === 'image-review-form') {
+    event.preventDefault(); const form = new FormData(event.target); const file = form.get('file');
+    try { const data = await fileToBase64(file); appState = await api('/api/images/review', { name:file.name, data, mimeType:file.type, context:form.get('context'), aiConsent:form.get('aiConsent') === 'on' }); render(); event.target.reset(); showToast('Visual review saved. Verify the advisory findings manually.'); }
+    catch (error) { showToast(error.message); }
+  }
   if (event.target.id === 'source-update-form') {
     event.preventDefault();
     const value = Number($('#source-value-input').value);
@@ -423,7 +492,7 @@ document.addEventListener('submit', async event => {
     event.preventDefault();
     const form = new FormData(event.target);
     try {
-      appState = await api('/api/content/analyze', { title: form.get('title'), channel: form.get('channel'), sourceId: form.get('sourceId'), body: form.get('body'), aiConsent: form.get('aiConsent') === 'yes' });
+      appState = await api('/api/content/analyze', { title: form.get('title'), channel: form.get('channel'), campaign:form.get('campaign'),language:form.get('language')||'en',sourceId: form.get('sourceId'), body: form.get('body'), aiConsent: form.get('aiConsent') === 'yes' });
       render(); event.target.reset();
       const latest = appState.content[0];
       showToast(latest.status === 'needs_review' ? 'Review created with an evidence link.' : 'Content matches the current approved fact.');
@@ -432,7 +501,7 @@ document.addEventListener('submit', async event => {
   if (event.target.id === 'source-create-form') {
     event.preventDefault();
     const form = new FormData(event.target);
-    try { appState = await api('/api/sources/create', { title: form.get('title'), kind: form.get('kind'), guidance: form.get('guidance') }); render(); event.target.reset(); showToast('New source saved as pending approval.'); }
+    try { appState = await api('/api/sources/create', { title: form.get('title'), kind: form.get('kind'), language:form.get('language')||'en',guidance: form.get('guidance') }); render(); event.target.reset(); showToast('New source saved as pending approval.'); }
     catch (error) { showToast(error.message); }
   }
   if (event.target.id === 'monitor-create-form') {
@@ -444,10 +513,16 @@ document.addEventListener('submit', async event => {
 });
 
 document.addEventListener('change', event => { if (event.target.id === 'content-source') updateSelectedSourceHint(); });
+document.addEventListener('change',async event=>{const select=event.target.closest('[data-member-role]');if(!select)return;try{appState=await api('/api/workspace/member-role',{userId:select.dataset.memberRole,role:select.value});render();showToast('Workspace role updated.');}catch(error){showToast(error.message);render();}});
+document.addEventListener('change',async event=>{if(event.target.id!=='workspace-selector'||!event.target.value)return;const id=event.target.value;sessionStorage.setItem('dante-workspace-id',id);window.parent.postMessage({type:'dante-workspace-select',workspaceId:id},window.location.origin);try{appState=await api('/api/state');render();showToast(`Switched to ${event.target.selectedOptions[0]?.textContent||'workspace'}.`);}catch(error){showToast(error.message);}});
 document.addEventListener('input', event => { if (event.target.id === 'source-search') renderSourceLibrary(); });
 
 async function boot() {
   try { await authReady; [appState, integrationConfig] = await Promise.all([api('/api/state'), api('/api/config')]); render(); }
   catch (error) { document.body.innerHTML = `<main style="font:14px Segoe UI,Arial;padding:50px;color:#202334"><h1>Dante could not load</h1><p>${escapeHtml(error.message)}</p></main>`; }
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error('Could not read the selected file.')); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.readAsDataURL(file); });
 }
 boot();
